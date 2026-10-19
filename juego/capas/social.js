@@ -55,7 +55,7 @@ async function soProfile(name,back){scr(`<div class="box wide"><h1>Perfil</h1><d
     <p>Nivel ${p.level}${p.country?' · '+esc(p.country):''}${p.friend?' · Amigo':''}</p>
     ${p.visible?`<div class="rows">${Object.keys(MODES).map(m=>st[m]?`<div><span>${MODES[m]}</span><b>${st[m].points} pts · ${st[m].division} · ${st[m].wins}/${st[m].games} victorias</b></div>`:'').join('')||'<div><span>Esta temporada</span><b>Sin partidas</b></div>'}
       ${p.totals?`<div><span>Total</span><b>${p.totals.games} partidas · ${p.totals.wins} victorias</b></div>`:''}</div>
-      ${h.length?'<h3>Últimas partidas</h3><div class="rows">'+h.map(x=>`<div><span>${MODES[x.mode]||x.mode} · ${new Date(x.date).toLocaleDateString()}</span><b>${x.survived!=null?fmt(x.survived)+' · '+x.kills+' ☠ · '+(x.won?'Victoria':'Derrota')+' · '+x.score+' pts':'Sin terminar'}</b></div>`).join('')+'</div>':''}`
+      ${h.length?'<h3>Últimas partidas</h3><div class="rows">'+h.map(x=>`<div><span>${MODES[x.mode]||x.mode} · ${new Date(x.date).toLocaleDateString('es-ES')}</span><b>${x.survived!=null?fmt(x.survived)+' · '+x.kills+' ☠ · '+(x.won?'Victoria':'Derrota')+' · '+x.score+' pts':'Sin terminar'}</b></div>`).join('')+'</div>':''}`
       :'<div class="note">Este perfil es privado.</div>'}
     ${p.me?'':`<div class="acrow" style="flex-wrap:wrap;justify-content:center;margin-top:10px">${p.friend?soB('del|'+name,'Quitar amigo'):soB('add|'+name,'Añadir amigo',1)}${soB('blk|'+name,'Bloquear')}${soB('rep|'+name,'Denunciar')}</div>`}`;
     soActs({add:async u=>{await rpc('send_friend_request',{p_username:u});acMsg('Solicitud enviada.')},del:async u=>{await rpc('remove_friend',{p_username:u});soProfile(u,back)},

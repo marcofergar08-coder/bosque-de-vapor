@@ -76,7 +76,7 @@ const save0=save;save=function(){save0();if(SESS)acPush(false)};
 function sumSave(s){const n=HEROES.filter(h=>s.unl&&s.unl[h.id]).length;return `${s.coins} monedas · ${s.runs} partidas · mejor ${fmt(s.best)} · ${n} personajes desbloqueados`}
 function acConflict(){const c=sanitize(AC.cloud.data);AC.view='conf';
   scr(`<div class="box"><h1>¿Qué progreso conservas?</h1><p>Hay un progreso distinto en la nube y en este dispositivo. Elige cuál quieres seguir usando. El otro se perderá.</p>
-  <button class="opt" id="acc1">${IC('up')}<div><b>El de la nube</b><span>${esc(sumSave(c))}<br>Guardado ${new Date(AC.cloud.updated_at).toLocaleString()}</span></div></button>
+  <button class="opt" id="acc1">${IC('up')}<div><b>El de la nube</b><span>${esc(sumSave(c))}<br>Guardado ${new Date(AC.cloud.updated_at).toLocaleString('es-ES')}</span></div></button>
   <button class="opt" id="acc2">${IC('user')}<div><b>El de este dispositivo</b><span>${esc(sumSave(SAVE))}</span></div></button><div id="acm"></div></div>`);
   $('acc1').onclick=()=>acBusy('acc1',async()=>{adopt(AC.cloud.data);acSetMeta(AC.cloud.updated_at);AC.state='ok';menu()});
   $('acc2').onclick=()=>acBusy('acc2',async()=>{const r=await rpc('save_progress',{p_data:SAVE,p_base:null,p_force:true});acSetMeta(r.updated_at);AC.state='ok';menu()})}
