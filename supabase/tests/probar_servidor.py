@@ -281,6 +281,17 @@ as_user(B, "update saves set data = '{\"coins\":9999}' where user_id = %s", A)
 check("no puedo cambiar el guardado de otro", as_user(A, "select data->>'coins' from saves")[0][0] == "20")
 check("guardado gigante rechazado", err(A, "update saves set data = jsonb_build_object('x', repeat('a', 400000)) where user_id = auth.uid()") is not None)
 
+r1 = rpc(B, "save_progress", json.dumps({"coins": 5}), None, False)
+check("primer guardado en la nube", r1["conflict"] is False)
+r2 = rpc(B, "save_progress", json.dumps({"coins": 7}), r1["updated_at"], False)
+check("guardar encima del mío", r2["conflict"] is False and rpc(B, "load_progress")["data"]["coins"] == 7)
+r3 = rpc(B, "save_progress", json.dumps({"coins": 1}), r1["updated_at"], False)
+check("otro móvil con un guardado viejo no pisa el nuevo", r3["conflict"] is True and r3["data"]["coins"] == 7, r3)
+rpc(B, "save_progress", json.dumps({"coins": 1}), None, True)
+check("el jugador puede elegir quedarse con el otro", rpc(B, "load_progress")["data"]["coins"] == 1)
+check("guardado que no es un objeto rechazado", "GUARDADO_NO_VALIDO" in (err(B, "select save_progress('[1,2]'::jsonb)") or ""))
+check("cada uno carga solo lo suyo", rpc(C, "load_progress") is None)
+
 print("Cuentas bloqueadas por el equipo")
 admin("update profiles set banned = true where id = %s", E)
 check("no puede jugar", "CUENTA_BLOQUEADA" in (err(E, "select start_match('s','forest')") or ""))
@@ -307,7 +318,7 @@ check("cuenta borrada", admin("select count(*) from auth.users where id = %s", A
       admin("select count(*) from profiles where id = %s", A)[0][0] == 0)
 check("sale de las clasificaciones", rpc(None, "get_leaderboard", "solo", 1) == [] and
       rpc(None, "get_leaderboard", "duo", 1, None, "teams") == [])
-check("su guardado y amistades se borran", admin("select count(*) from saves")[0][0] == 0 and
+check("su guardado y amistades se borran", admin("select count(*) from saves where user_id = %s", A)[0][0] == 0 and
       admin("select count(*) from friendships where %s in (requester, addressee)", A)[0][0] == 0)
 check("Beto sigue en el grupo y ahora es líder", rpc(B, "get_party")["me_leader"] is True)
 rpc(D, "update_profile", "Ana_01")

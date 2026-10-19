@@ -433,6 +433,32 @@ begin
   where id = u;
 end $$;
 
+-- Guardado en la nube. p_base es la fecha del guardado del que partía este
+-- dispositivo: si en la nube hay uno más nuevo (otro móvil), no se pisa y se
+-- devuelve para que el jugador elija.
+create or replace function public.save_progress(p_data jsonb, p_base timestamptz default null, p_force boolean default false)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user(); cur saves;
+begin
+  perform hit_rate('guardar', 240, interval '1 hour');
+  if p_data is null or jsonb_typeof(p_data) <> 'object' then raise exception 'GUARDADO_NO_VALIDO'; end if;
+  if octet_length(p_data::text) >= 300000 then raise exception 'GUARDADO_DEMASIADO_GRANDE'; end if;
+  select * into cur from saves where user_id = u for update;
+  if found and not p_force and (p_base is null or cur.updated_at > p_base + interval '1 millisecond') then
+    return jsonb_build_object('conflict', true, 'data', cur.data, 'updated_at', cur.updated_at);
+  end if;
+  insert into saves(user_id, data, updated_at) values (u, p_data, now())
+    on conflict (user_id) do update set data = excluded.data, version = saves.version + 1, updated_at = now();
+  return jsonb_build_object('conflict', false, 'updated_at', (select updated_at from saves where user_id = u));
+end $$;
+
+create or replace function public.load_progress() returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user();
+begin
+  return (select jsonb_build_object('data', data, 'updated_at', updated_at) from saves where user_id = u);
+end $$;
+
 -- Mi propio perfil completo.
 create or replace function public.get_me() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -929,6 +955,7 @@ create policy guardado_cambiar on public.saves for update to authenticated using
 -- Funciones que puede llamar el juego.
 grant execute on function
   public.update_profile(text,text,text,boolean,text,boolean), public.set_status(text), public.get_me(),
+  public.save_progress(jsonb,timestamptz,boolean), public.load_progress(),
   public.get_profile(text), public.get_history(text,int), public.search_players(text),
   public.send_friend_request(text), public.respond_friend_request(text,boolean), public.remove_friend(text),
   public.list_friends(), public.block_user(text), public.unblock_user(text), public.report_user(text,text,text),
