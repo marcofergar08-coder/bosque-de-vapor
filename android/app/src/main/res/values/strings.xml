@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bosque de Vapor</string>
+    <string name="title_activity_main">Bosque de Vapor</string>
+    <string name="package_name">com.marcofernandez.bosquedevapor</string>
+    <string name="custom_url_scheme">com.marcofernandez.bosquedevapor</string>
+</resources>

@@ -1,0 +1,33 @@
+# Compilación en la nube de Bosque de Vapor para iPhone (Codemagic).
+# Antes de usarlo hay que añadir en Codemagic la clave de App Store Connect
+# con el nombre "bosque_asc" (Teams > Integrations > Developer Portal).
+workflows:
+  ios-testflight:
+    name: iPhone (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: bosque_asc
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.marcofernandez.bosquedevapor
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Instalar dependencias
+        script: npm ci
+      - name: Copiar el juego a la app
+        script: npx cap sync ios
+      - name: Preparar la firma
+        script: xcode-project use-profiles
+      - name: Número de compilación
+        script: cd ios/App && agvtool new-version -all $BUILD_NUMBER
+      - name: Compilar la app
+        script: xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

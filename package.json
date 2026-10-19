@@ -1,0 +1,17 @@
+{
+  "name": "bosque-de-vapor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bosque de Vapor: juego de supervivencia",
+  "scripts": {
+    "sync": "cap sync"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/android": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

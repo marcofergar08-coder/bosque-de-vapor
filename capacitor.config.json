@@ -1,0 +1,9 @@
+{
+  "appId": "com.marcofernandez.bosquedevapor",
+  "appName": "Bosque de Vapor",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false
+  }
+}
