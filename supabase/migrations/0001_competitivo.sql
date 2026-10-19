@@ -754,6 +754,96 @@ begin
   return get_party();
 end $$;
 
+-- ---------------------------------------------------------------------
+-- Emparejamiento: jugadores sueltos o grupos incompletos buscan compañeros
+-- ---------------------------------------------------------------------
+create table if not exists public.queue(
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  party_id uuid references public.parties(id) on delete cascade,   -- si busca con su grupo
+  mode text not null check (mode in ('duo','trio','squad')),
+  difficulty text not null check (difficulty in ('s','n','x')),
+  joined_at timestamptz not null default now(),
+  seen_at timestamptz not null default now()
+);
+create index if not exists queue_mode on public.queue(mode, difficulty, joined_at);
+
+-- Intenta formar un grupo completo con los que esperan (los más antiguos primero),
+-- sin juntar a jugadores que se han bloqueado.
+create or replace function public.mm_try(p_mode text, p_diff text) returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare need int := mode_size(p_mode); grp record; chosen uuid[] := '{}'; n int := 0; pid uuid; lead uuid; ok boolean;
+begin
+  perform pg_advisory_xact_lock(hashtext('emparejar:' || p_mode || p_diff));
+  delete from queue where seen_at < now() - interval '30 seconds';
+  for grp in select coalesce(q.party_id::text, q.user_id::text) as k, array_agg(q.user_id order by q.joined_at) as us, min(q.joined_at) as t
+             from queue q where q.mode = p_mode and q.difficulty = p_diff group by 1 order by 3 loop
+    if n + cardinality(grp.us) > need then continue; end if;
+    select not exists(select 1 from unnest(grp.us) a, unnest(chosen) b where is_blocked(a, b)) into ok;
+    if not ok then continue; end if;
+    chosen := chosen || grp.us; n := n + cardinality(grp.us);
+    exit when n = need;
+  end loop;
+  if n < need then return null; end if;
+  perform 1 from queue where user_id = any(chosen) for update;
+  -- Líder: el líder de un grupo que buscaba, o el que más lleva esperando.
+  select coalesce((select pa.leader from queue q join parties pa on pa.id = q.party_id where q.user_id = any(chosen) and pa.leader = any(chosen) limit 1), chosen[1]) into lead;
+  delete from party_members where user_id = any(chosen);
+  delete from parties pa where not exists(select 1 from party_members pm where pm.party_id = pa.id);
+  insert into parties(leader, mode) values (lead, p_mode) returning id into pid;
+  insert into party_members(party_id, user_id, ready) select pid, x, true from unnest(chosen) x;
+  delete from queue where user_id = any(chosen);
+  perform log_event(lead, 'emparejado', jsonb_build_object('party', pid, 'modo', p_mode));
+  return pid;
+end $$;
+
+create or replace function public.queue_join(p_mode text, p_difficulty text default 's') returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user(); pt parties; n int;
+begin
+  perform hit_rate('cola', 60, interval '1 hour');
+  if p_mode not in ('duo','trio','squad') then raise exception 'MODO_NO_VALIDO'; end if;
+  if p_difficulty not in ('s','n','x') then raise exception 'DIFICULTAD_NO_VALIDA'; end if;
+  perform close_stale_matches();
+  if exists(select 1 from match_players where user_id = u and active) then raise exception 'YA_EN_PARTIDA'; end if;
+  select pa.* into pt from parties pa join party_members pm on pm.party_id = pa.id where pm.user_id = u;
+  select count(*) into n from party_members where party_id = pt.id;
+  if pt.id is not null and n > 1 then
+    if pt.leader <> u then raise exception 'SOLO_EL_LIDER'; end if;
+    if n >= mode_size(p_mode) then raise exception 'DEMASIADOS_EN_EL_GRUPO'; end if;
+    update parties set mode = p_mode where id = pt.id;
+    delete from queue where user_id in (select user_id from party_members where party_id = pt.id);
+    insert into queue(user_id, party_id, mode, difficulty) select user_id, pt.id, p_mode, p_difficulty from party_members where party_id = pt.id;
+  else
+    perform leave_party();
+    insert into queue(user_id, mode, difficulty) values (u, p_mode, p_difficulty)
+      on conflict (user_id) do update set mode = excluded.mode, difficulty = excluded.difficulty, joined_at = now(), seen_at = now(), party_id = null;
+  end if;
+  perform mm_try(p_mode, p_difficulty);
+  return queue_status();
+end $$;
+
+create or replace function public.queue_status() returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user(); q queue; w int;
+begin
+  update queue set seen_at = now() where user_id = u returning * into q;
+  if not found then return jsonb_build_object('queued', false, 'party', get_party()); end if;
+  -- El grupo entero sigue esperando mientras alguno de sus miembros tenga el juego abierto.
+  if q.party_id is not null then update queue set seen_at = now() where party_id = q.party_id; end if;
+  perform mm_try(q.mode, q.difficulty);
+  if not exists(select 1 from queue where user_id = u) then return jsonb_build_object('queued', false, 'matched', true, 'party', get_party()); end if;
+  select count(*) into w from queue where mode = q.mode and difficulty = q.difficulty;
+  return jsonb_build_object('queued', true, 'mode', q.mode, 'difficulty', q.difficulty, 'since', q.joined_at, 'waiting', w, 'size', mode_size(q.mode));
+end $$;
+
+create or replace function public.queue_leave() returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user(); q queue;
+begin
+  select * into q from queue where user_id = u;
+  if q.party_id is not null then delete from queue where party_id = q.party_id; else delete from queue where user_id = u; end if;
+end $$;
+
 -- Partidas
 -- El líder empieza la partida. El servidor comprueba el modo, que estén todos
 -- listos y que nadie esté ya en otra partida, y devuelve la semilla.
@@ -973,6 +1063,7 @@ alter table public.ratings enable row level security;
 alter table public.team_ratings enable row level security;
 alter table public.security_events enable row level security;
 alter table public.rate_events enable row level security;
+alter table public.queue enable row level security;
 
 revoke all on all tables in schema public from anon, authenticated;
 revoke execute on all functions in schema public from public, anon, authenticated;
@@ -1022,7 +1113,8 @@ grant execute on function
   public.send_friend_request(text), public.respond_friend_request(text,boolean), public.remove_friend(text),
   public.list_friends(), public.block_user(text), public.unblock_user(text), public.report_user(text,text,text),
   public.create_party(text), public.get_party(), public.set_party_mode(text), public.set_ready(boolean),
-  public.invite_to_party(text), public.list_invites(), public.set_party_room(text), public.list_blocked(), public.join_party(text), public.leave_party(),
+  public.invite_to_party(text), public.list_invites(), public.set_party_room(text), public.list_blocked(),
+  public.queue_join(text,text), public.queue_status(), public.queue_leave(), public.join_party(text), public.leave_party(),
   public.kick_member(text), public.start_match(text,text,jsonb), public.submit_result(uuid,int,int,boolean,int,boolean),
   public.abandon_match(uuid,int,int,int), public.get_match_result(uuid), public.get_my_rank(text,int,text), public.claim_season_rewards(),
   public.export_my_data(), public.delete_my_account()
