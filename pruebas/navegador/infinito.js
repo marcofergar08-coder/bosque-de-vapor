@@ -37,8 +37,8 @@ check('hay jefe en las oleadas 5, 10, 15, 20 y 25',[5,10,15,20,25].every(w=>seen
 check('los jefes derrotados cuentan',seen.bk>=5,seen.bk);
 check('salen eventos y desafíos variados',Object.keys(seen.ev).length>=4,seen.ev);
 check('los hitos (10 y 25) se anuncian',seen.mil>=2,seen.mil);
-const hw=Object.entries(seen.hp).map(([w,h])=>[+w,h]).sort((a,b)=>a[0]-b[0]);
-check('los demonios tienen más vida en oleadas más altas',hw.length>=2&&hw[hw.length-1][1]>hw[0][1],hw);
+const hw=await p.evaluate(()=>{const I=S.inf,w0=I.w,e0=I.ev,o=[];for(const w of [1,10,30,60,150]){I.w=w;I.ev='';const n=E.length;spawnEnemy('com',P.x+400,P.y);const e=E[n];o.push([w,e?Math.round(e.hp):0,e?e.dmg:0]);if(e)E.splice(n,1)}I.w=w0;I.ev=e0;return o});
+check('los demonios tienen más vida en oleadas más altas',hw.every((x,i)=>x[1]>0&&(!i||x[1]>hw[i-1][1])),hw);
 console.log('Partida muy larga (acelerada)');
 const lr=await p.evaluate(()=>{const t0=performance.now();T.ms=0;T.steps=0;const m0=performance.memory?performance.memory.usedJSHeapSize:0;
   while(S.inf.done<300&&performance.now()-t0<240000&&run)tick(60);

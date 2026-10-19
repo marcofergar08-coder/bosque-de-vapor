@@ -60,10 +60,11 @@ check('y la individual de dúos',/Ana/.test(t)&&/Carla/.test(t)&&/Tu posición: 
 console.log('Historial y temporadas');
 await A.evaluate(()=>{menu();acScreen()});await wait(A,async()=>!!(await A.$('#achi')));await A.click('#achi');t='';await wait(A,async()=>/Victoria|Derrota/.test(t=await txt(A)));
 check('mi historial con las 3 partidas',(t.match(/Victoria|Derrota/g)||[]).length===3,t);
+const S0=+sql('select max(id) from seasons'),S1=S0+1;
 sql(`update seasons set starts_at = now() - interval '8 weeks', ends_at = now() - interval '1 minute' where id=(select max(id) from seasons)`);
-await V.evaluate(()=>{LBV.seasons=null;LBV.mode='solo';LBV.kind='players';LBV.season=null;lbScreen()});t='';await wait(V,async()=>/Temporada 2/.test(t=await txt(V)));
-check('al acabar la temporada empieza otra vacía',/Temporada 2 · termina en 5[56] días/.test(t)&&/Todavía no hay nadie/.test(t),t);
-await V.selectOption('#lbse','1');t='';await wait(V,async()=>/Beto/.test(t=await txt(V)));check('la anterior se puede consultar',/Temporada 1 · terminada/.test(t)&&/Beto/.test(t),t);
+await V.evaluate(()=>{LBV.seasons=null;LBV.mode='solo';LBV.kind='players';LBV.season=null;lbScreen()});t='';await wait(V,async()=>new RegExp('Temporada '+S1).test(t=await txt(V)));
+check('al acabar la temporada empieza otra vacía',new RegExp('Temporada '+S1+' · termina en 5[56] días').test(t)&&/Todavía no hay nadie/.test(t),t);
+await V.selectOption('#lbse',String(S0));t='';await wait(V,async()=>/Beto/.test(t=await txt(V)));check('la anterior se puede consultar',new RegExp('Temporada '+S0+' · terminada').test(t)&&/Beto/.test(t),t);
 const c0=await B.evaluate(()=>SAVE.coins);await B.evaluate(()=>lbRewards());await B.waitForTimeout(1000);
 const c1=await B.evaluate(()=>SAVE.coins);check('recompensa de temporada en monedas (Plata: 200)',c1-c0===200,[c0,c1]);
 await B.evaluate(()=>lbRewards());await B.waitForTimeout(800);check('solo se cobra una vez',await B.evaluate(()=>SAVE.coins)===c1);
