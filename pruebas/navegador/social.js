@@ -33,7 +33,7 @@ await A.click('[data-tab=fr]');t=await wait(A,/Mis amigos \(1\)/);check('Ana ya 
 check('se ve si el amigo está conectado',await A.evaluate(()=>!!ov.querySelector('[title=Conectado]')));
 console.log('Grupo e invitaciones');
 await A.click('[data-tab=pt]');await wait(A,/Crea un grupo/);await A.click('#som_trio');t=await wait(A,/Código del grupo/);
-const code=await A.evaluate(()=>ov.querySelector('.socode').textContent.trim());check('crear grupo de tríos con código',/^[A-Z0-9]{6}$/.test(code)&&/Tríos · 1 de 3/.test(t),t);
+const code=await A.evaluate(()=>ov.querySelector('.socode').textContent.trim());check('crear grupo de tríos con código',/^[A-Z0-9]{6}$/.test(code)&&/Tríos · Normal · 1 de 3/.test(t),t);
 await A.click('#soinv');await wait(A,/Invitar amigos/);await A.click('[data-act="inv|Beto"]');check('invitar a un amigo',/Invitación enviada a Beto/.test(await wait(A,/Invitación enviada|Algo/)));
 await B.evaluate(()=>menu());t='';for(let i=0;i<30&&!(await B.$('#soia'));i++)await B.waitForTimeout(500);
 check('a Beto le llega el aviso en el menú',await B.$('#soia')!==null,await B.evaluate(()=>document.body.innerText.slice(0,200)));

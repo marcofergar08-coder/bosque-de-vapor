@@ -2,7 +2,11 @@
 /* ===== Fase 10: amigos, perfiles de otros jugadores, grupos e invitaciones =====
  Los cambios llegan al momento por tiempo real de Supabase cuando está disponible y,
  en cualquier caso, se comprueban cada pocos segundos mientras la pantalla está abierta. */
-const MODES={solo:'Solitario',duo:'Dúos',trio:'Tríos',squad:'Escuadrones'},MSIZE={solo:1,duo:2,trio:3,squad:4};
+const MODES={solo:'Solitario',duo:'Dúos',trio:'Tríos',squad:'Escuadrones'},MSIZE={solo:1,duo:2,trio:3,squad:4},VARS={normal:'Normal',inf:'Infinito'};
+// Tipo de partida elegido para crear grupo o buscar jugadores (normal o Infinito).
+let SOV='normal';try{SOV=localStorage.getItem('bdv_var')==='inf'?'inf':'normal'}catch(e){}
+const soVar=v=>{SOV=v==='inf'?'inf':'normal';try{localStorage.setItem('bdv_var',SOV)}catch(e){}};
+const soVarBtns=(cur,lead)=>`<div class="rbtn">${Object.keys(VARS).map(v=>`<button class="opt" id="sov_${v}" ${lead?'':'disabled'} ${cur===v?'aria-pressed="true" style="background:#141210;color:#f3ecd8"':''}><b>${VARS[v]}</b><span>${v==='inf'?'Oleadas sin fin':'Con jefe final'}</span></button>`).join('')}</div>`;
 const SO={tab:'fr',poll:0,inv:[],invT:0,ch:null,party:null,seen:{}};
 const dot=st=>`<span title="${st==='online'?'Conectado':st==='playing'?'Jugando':'Desconectado'}" style="display:inline-block;width:10px;height:10px;border-radius:50%;border:2px solid #141210;margin-right:6px;background:${st==='online'?'#2a7a2a':st==='playing'?'#ffd23d':'transparent'}"></span>`;
 {const st=document.createElement('style');st.textContent=`.sotabs{display:flex;gap:6px;margin:6px 0 10px}.sotabs .opt{margin:0;padding:8px 6px;justify-content:center;flex:1}.sotabs .opt[aria-pressed=true]{background:#141210;color:#f3ecd8}
@@ -54,8 +58,8 @@ async function soProfile(name,back){scr(`<div class="box wide"><h1>Perfil</h1><d
     el.innerHTML=`<div class="acav"><button tabindex="-1">${heroImg(p.avatar)}</button></div><h2 style="margin:4px 0">${p.status?dot(p.status):''}${esc(p.username)}</h2>
     <p>Nivel ${p.level}${p.country?' · '+esc(p.country):''}${p.friend?' · Amigo':''}</p>
     ${p.visible?`<div class="rows">${Object.keys(MODES).map(m=>st[m]?`<div><span>${MODES[m]}</span><b>${st[m].points} pts · ${st[m].division} · ${st[m].wins}/${st[m].games} victorias</b></div>`:'').join('')||'<div><span>Esta temporada</span><b>Sin partidas</b></div>'}
-      ${p.totals?`<div><span>Total</span><b>${p.totals.games} partidas · ${p.totals.wins} victorias</b></div>`:''}</div>
-      ${h.length?'<h3>Últimas partidas</h3><div class="rows">'+h.map(x=>`<div><span>${MODES[x.mode]||x.mode} · ${new Date(x.date).toLocaleDateString('es-ES')}</span><b>${x.survived!=null?fmt(x.survived)+' · '+x.kills+' ☠ · '+(x.won?'Victoria':'Derrota')+' · '+x.score+' pts':'Sin terminar'}</b></div>`).join('')+'</div>':''}`
+      ${p.totals?`<div><span>Total</span><b>${p.totals.games} partidas · ${p.totals.wins} victorias</b></div>`:''}</div>${typeof infProfileHtml==='function'?infProfileHtml(p.inf):''}
+      ${h.length?'<h3>Últimas partidas</h3><div class="rows">'+h.map(x=>`<div><span>${MODES[x.mode]||x.mode} · ${new Date(x.date).toLocaleDateString('es-ES')}</span><b>${x.survived!=null?fmt(x.survived)+' · '+x.kills+' ☠ · '+(x.variant==='inf'?'Infinito: oleada '+(x.waves|0):x.won?'Victoria':'Derrota')+' · '+x.score+' pts':'Sin terminar'}</b></div>`).join('')+'</div>':''}`
       :'<div class="note">Este perfil es privado.</div>'}
     ${p.me?'':`<div class="acrow" style="flex-wrap:wrap;justify-content:center;margin-top:10px">${p.friend?soB('del|'+name,'Quitar amigo'):soB('add|'+name,'Añadir amigo',1)}${soB('blk|'+name,'Bloquear')}${soB('rep|'+name,'Denunciar')}</div>`}`;
     soActs({add:async u=>{await rpc('send_friend_request',{p_username:u});acMsg('Solicitud enviada.')},del:async u=>{await rpc('remove_friend',{p_username:u});soProfile(u,back)},
@@ -75,16 +79,18 @@ async function soParty(){scr(`<div class="box wide"><h1>Grupo</h1>${soTabs('pt')
   const draw=async()=>{const p=await rpc('get_party'),el=$('sog');if(!el)return;SO.party=p;
     if(!p){soRealtime(null);const inv=await rpc('list_invites');
       el.innerHTML=(inv.length?'<h3>Te han invitado</h3><div class="solist">'+inv.map(i=>`<div><span><b>${esc(i.from)}</b> · ${MODES[i.mode]}</span>${soB('join|'+i.code,'Unirme',1)}</div>`).join('')+'</div>':'')+
-      `<p>Crea un grupo y comparte el código, o invita a tus amigos.</p><div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="som_${m}"><b>${MODES[m]}</b><span>${MSIZE[m]} jugadores</span></button>`).join('')}</div>
+      `<p>Tipo de partida</p>${soVarBtns(SOV,1)}<p>Crea un grupo y comparte el código, o invita a tus amigos.</p><div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="som_${m}"><b>${MODES[m]}</b><span>${MSIZE[m]} jugadores</span></button>`).join('')}</div>
       <h3>Jugar con otros jugadores</h3><p class="acsm">Te buscamos compañeros de tu misma dificultad (${DIFS[mmDif()].n}).</p>
       <div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="soq_${m}"><b>${MODES[m]}</b><span>Buscar</span></button>`).join('')}</div>
       <label class="acl" for="socd">¿Tienes un código de grupo?</label><div class="acrow"><input class="acf" id="socd" maxlength="6" autocomplete="off" style="text-transform:uppercase" data-go="sojn"><button class="sob w" id="sojn">Unirme</button></div>`;
       acKeys();for(const m of ['duo','trio','squad'])$('soq_'+m).onclick=()=>acBusy('soq_'+m,()=>mmJoin(m));
-      for(const m of ['duo','trio','squad'])$('som_'+m).onclick=()=>acBusy('som_'+m,async()=>{await rpc('create_party',{p_mode:m});draw()});
+      for(const m of ['duo','trio','squad'])$('som_'+m).onclick=()=>acBusy('som_'+m,async()=>{await rpc('create_party',{p_mode:m});if(SOV==='inf')await rpc('set_party_variant',{p_variant:'inf'});draw()});
+      for(const v of Object.keys(VARS))$('sov_'+v).onclick=()=>{soVar(v);draw()};
       $('sojn').onclick=()=>acBusy('sojn',async()=>{const c=$('socd').value.trim().toUpperCase();if(!/^[A-Z0-9]{6}$/.test(c))return acMsg('El código tiene 6 letras o números.',true);await rpc('join_party',{p_code:c});draw()});
       soActs({join:async c=>{await rpc('join_party',{p_code:c});draw()}});return}
     soRealtime(p.id);const me=p.members.find(m=>m.username===ME.username)||{},full=p.members.length===p.size,allReady=p.members.every(m=>m.ready||m.leader);
-    el.innerHTML=`<p>Código del grupo</p><div class="socode">${esc(p.code)}</div><p>${MODES[p.mode]} · ${p.members.length} de ${p.size} jugadores</p>
+    el.innerHTML=`<p>Código del grupo</p><div class="socode">${esc(p.code)}</div><p>${MODES[p.mode]} · ${VARS[p.variant]||'Normal'} · ${p.members.length} de ${p.size} jugadores</p>
+      ${p.me_leader?soVarBtns(p.variant,1):''}
       ${p.me_leader?`<div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="som_${m}" ${p.mode===m?'aria-pressed="true" style="background:#141210;color:#f3ecd8"':''}><b>${MODES[m]}</b></button>`).join('')}</div>`:''}
       <div class="solist">${p.members.map(m=>soRow({...m,note:m.leader?'Líder':m.ready?'Listo':'No está listo'},p.me_leader&&!m.leader?soB('kick|'+m.username,'Expulsar'):'')).join('')}
       ${Array.from({length:p.size-p.members.length},()=>'<div><span><i>Hueco libre</i></span></div>').join('')}</div>
@@ -93,11 +99,12 @@ async function soParty(){scr(`<div class="box wide"><h1>Grupo</h1>${soTabs('pt')
       ${p.size>p.members.length?`<button class="opt" id="soinv">${IC('user')}<div><b>Invitar amigos</b></div></button>`:''}
       ${p.me_leader&&p.size>p.members.length&&p.members.length>1?`<button class="opt" id="soqp">${IC('star')}<div><b>Completar con otros jugadores</b><span>Buscar ${p.size-p.members.length} más</span></div></button>`:''}
       <button class="opt" id="solv">${IC('back')}<div><b>Salir del grupo</b></div></button>`;
+    if(p.me_leader)for(const v of Object.keys(VARS))$('sov_'+v).onclick=()=>acBusy('sov_'+v,async()=>{soVar(v);await rpc('set_party_variant',{p_variant:v});draw()});
     if(p.me_leader)for(const m of ['duo','trio','squad'])$('som_'+m).onclick=()=>acBusy('som_'+m,async()=>{await rpc('set_party_mode',{p_mode:m});draw()});
     if($('sordy'))$('sordy').onclick=()=>acBusy('sordy',async()=>{await rpc('set_ready',{p_ready:!me.ready});draw()});
     if($('sogo'))$('sogo').onclick=()=>acBusy('sogo',()=>ptStart(p));
     if($('soinv'))$('soinv').onclick=soInvitePick;
-    if($('soqp'))$('soqp').onclick=()=>acBusy('soqp',()=>mmJoin(p.mode));
+    if($('soqp'))$('soqp').onclick=()=>acBusy('soqp',()=>mmJoin(p.mode,p.variant));
     $('solv').onclick=()=>acBusy('solv',async()=>{await rpc('leave_party');soRealtime(null);draw()});
     soActs({kick:async u=>{await rpc('kick_member',{p_username:u});draw()}});
     if(window.ptWatch)ptWatch(p)};
@@ -109,9 +116,9 @@ async function soInvitePick(){scr(`<div class="box"><h1>Invitar amigos</h1><div 
 
 // ---- Emparejamiento ----
 const mmDif=()=>{const d=curDif();return ['s','n','x'].includes(d)?d:'s'};
-async function mmJoin(mode){if(!['s','n','x'].includes(curDif()))return acMsg('Para buscar jugadores elige la dificultad Supervivencia o una más difícil (menú › Dificultad). La Aventura no cuenta para la clasificación.',true);const r=await rpc('queue_join',{p_mode:mode,p_difficulty:mmDif()});mmScreen(r)}
+async function mmJoin(mode,variant){if(!['s','n','x'].includes(curDif()))return acMsg('Para buscar jugadores elige la dificultad Supervivencia o una más difícil (menú › Dificultad). La Aventura no cuenta para la clasificación.',true);const r=await rpc('queue_join',{p_mode:mode,p_difficulty:mmDif(),p_variant:variant||SOV});mmScreen(r)}
 function mmScreen(r){if(!r.queued)return mmFound(r);const t0=Date.parse(r.since)||Date.now();
-  scr(`<div class="box"><h1>Buscando jugadores</h1><p>${MODES[r.mode]} · ${DIFS[r.difficulty].n}</p><p style="font-size:28px" id="mmt">0:00</p><p id="mmw">${r.waiting} de ${r.size} en la cola</p>
+  scr(`<div class="box"><h1>Buscando jugadores</h1><p>${MODES[r.mode]} · ${VARS[r.variant]||'Normal'} · ${DIFS[r.difficulty].n}</p><p style="font-size:28px" id="mmt">0:00</p><p id="mmw">${r.waiting} de ${r.size} en la cola</p>
   <p class="acsm">Si cierras el juego, sales de la cola.</p><div id="acm"></div><button class="opt" id="mmx">${IC('back')}<div><b>Cancelar</b></div></button></div>`);
   $('mmx').onclick=()=>acBusy('mmx',async()=>{soStop();await rpc('queue_leave');soScreen('pt')});
   SO.poll=setInterval(async()=>{const el=$('mmt');if(!el)return soStop();el.textContent=fmt(Math.max(0,(Date.now()-t0)/1000));

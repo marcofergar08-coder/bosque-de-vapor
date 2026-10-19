@@ -28,7 +28,7 @@ Este proyecto convierte el juego (`www/index.html`) en una app de iPhone con Cap
 ## Actualizar el juego
 
 El juego se construye a partir de `juego/base.html` (la versión 8) y las capas de `juego/capas/`
-(online, cuentas, amigos y grupos, partidas clasificadas y clasificación). Después de cambiar algo:
+(online, Modo Infinito, cuentas, amigos y grupos, partidas clasificadas, clasificación y donaciones). Después de cambiar algo:
 
 ```
 npm install

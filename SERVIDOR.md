@@ -1,6 +1,6 @@
 # Conectar el servidor (Supabase)
 
-Las cuentas, el progreso en la nube, los amigos, los grupos, el emparejamiento y la clasificación mundial usan **Supabase**. Su plan gratuito es suficiente para empezar. Mientras no lo conectes, el juego funciona igual que antes y no se conecta a nada.
+Las cuentas, el progreso en la nube, los amigos, los grupos, el emparejamiento, la clasificación mundial (también la del Modo Infinito) y las donaciones usan **Supabase**. Su plan gratuito es suficiente para empezar. Mientras no lo conectes, el juego funciona igual que antes y no se conecta a nada.
 
 Los pasos marcados como **imprescindible** son necesarios para que el sistema funcione. Los demás activan métodos de acceso concretos.
 
@@ -57,6 +57,38 @@ Las partidas usan una conexión directa entre los móviles. Esto ya funciona en 
 
 - Para encontrar la sala se usa por defecto el servidor público y gratuito de PeerJS. No ofrece ninguna garantía de funcionamiento. Antes de publicar conviene tener uno propio. [peerjs-server](https://github.com/peers/peerjs-server) se puede alojar gratis en Render o Fly.io.
 - Algunas redes móviles bloquean las conexiones directas. Para ellas hace falta un servidor TURN, por ejemplo el plan gratuito de Metered. Si me pasas los datos, los añado al juego.
+
+## 9. Donaciones con Stripe (opcional, solo versión web)
+
+El botón **Apoyar al creador** aparece en la versión web. En la app de iPhone y Android está oculto, porque Apple y Google obligan a usar sus propios pagos dentro de las apps. Mientras no completes estos pasos, el botón explica que las donaciones aún no están activadas y no cobra nada.
+
+Cómo funciona: el juego pide al servidor una página de pago, el jugador paga en la página oficial de Stripe y Stripe avisa al servidor con un mensaje firmado. Solo entonces el juego da las gracias. El juego nunca ve la tarjeta ni las claves secretas.
+
+### Lo que necesitas tú
+
+- **Una cuenta de Stripe a tu nombre** ([stripe.com](https://stripe.com)). Stripe pide ser mayor de edad, tus datos de identidad y una **cuenta bancaria** donde recibir el dinero. Si eres menor de edad, la cuenta tiene que abrirla un adulto responsable. Al registrarte, describe la actividad como un videojuego que acepta apoyo voluntario. Stripe revisa cada cuenta y puede pedirte más datos.
+- Stripe cobra una comisión por cada pago. Consulta su página de precios. Pregunta también cómo declarar lo que recibas.
+
+### Pasos
+
+1. **Prueba primero en modo de prueba.** En el panel de Stripe, activa el *modo de prueba* (*Test mode*). Así no se cobra dinero de verdad.
+2. **Clave secreta.** En *Developers* y luego *API keys*, copia la **Secret key** (`sk_test_…` en modo de prueba). Es secreta: no la pongas en el juego ni me la pases por el chat. Va solo en Supabase (paso 4).
+3. **Subir las dos funciones a Supabase.** En Supabase, ve a *Edge Functions* y crea una función nueva con el editor del navegador:
+   - Nombre `crear-donacion`: pega el contenido de [`supabase/functions/crear-donacion/index.ts`](supabase/functions/crear-donacion/index.ts) y pulsa *Deploy*.
+   - Nombre `stripe-webhook`: pega [`supabase/functions/stripe-webhook/index.ts`](supabase/functions/stripe-webhook/index.ts) y pulsa *Deploy*.
+   - En los ajustes de **las dos**, desactiva **Enforce JWT verification** (*Verify JWT*). La clave publicable del juego no es un JWT, y Stripe no tiene sesión. La seguridad la dan la firma de Stripe y las comprobaciones de dentro.
+4. **Avisos de Stripe (webhook).** En Stripe, ve a *Developers* y luego *Webhooks*, y añade un destino:
+   - Dirección: `https://gtkuopfkubxxlkvidhlg.supabase.co/functions/v1/stripe-webhook`
+   - Eventos: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed` y `checkout.session.expired`.
+   - Copia el **Signing secret** (`whsec_…`).
+5. **Secretos en Supabase.** En *Edge Functions*, entra en *Secrets* y añade:
+   - `STRIPE_SECRET_KEY`: la clave del paso 2.
+   - `STRIPE_WEBHOOK_SECRET`: el `whsec_…` del paso 4.
+   - `ALLOWED_RETURN_URLS`: la dirección de la versión web del juego, por ejemplo `https://marcofergar08-coder.github.io/bosque-de-vapor/`. Si hay más de una, sepáralas con comas. Solo se vuelve a esas direcciones después de pagar.
+6. **Probar.** Abre la versión web, pulsa *Apoyar al creador* y paga con la tarjeta de prueba de Stripe `4242 4242 4242 4242`, con cualquier fecha futura y cualquier CVC. Debe salir «¡Muchísimas gracias!». En Supabase, la tabla `donations` debe mostrar la donación como `paid`.
+7. **Pasar a real.** Cuando todo funcione, repite los pasos 2, 4 y 5 en el modo real de Stripe (`sk_live_…` y un webhook nuevo con su propio `whsec_…`) y sustituye los dos secretos en Supabase. No hace falta tocar el juego.
+
+Para ver las donaciones, mira la tabla `donations` de Supabase o el panel de Stripe. Si un pago tarda (algunos métodos son lentos), el juego lo explica y no pide volver a pagar.
 
 ## Comprobar que todo funciona
 

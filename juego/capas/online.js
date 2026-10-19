@@ -104,7 +104,7 @@ const netMulti=()=>NET.on&&NET.host&&NET.pl.length>1;
 const _ea8=enemyAI;enemyAI=function(e,dt){if(!netMulti())return _ea8(e,dt);
   let q=P,bd=Infinity;for(const o of NET.pl){if(o.dn||o.off)continue;const d=Math.hypot(o.x-e.x,o.y-e.y);if(d<bd){bd=d;q=o}}
   return withP(q,()=>_ea8(e,dt))};
-function netEnd(w){netAll({t:'end',w,k:S.kills,tm:Math.floor(S.t),c:S.coins})}
+function netEnd(w){netAll({t:'end',w,k:S.kills,tm:Math.floor(S.t),c:S.coins,bs:S.bk|0,...(S.inf?{wv:S.inf.done|0,iw:S.inf.w|0}:{})})}
 const _ov8=over;over=function(){if(netMulti()&&!NET.end){if(P.hp<=0)netDown(P);return}
   if(NET.on&&NET.host)netEnd(0);NET.end=0;return _ov8()};
 const _wn8=win;win=function(){if(NET.on&&NET.host)netEnd(1);return _wn8()};

@@ -9,7 +9,7 @@ Uso: npm install && python3 juego/construir.py [salida.html]
 """
 import os, sys
 R = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CAPAS = ['online.js', 'cuentas.js', 'social.js', 'partida.js', 'clasificacion.js']
+CAPAS = ['online.js', 'infinito.js', 'cuentas.js', 'social.js', 'partida.js', 'clasificacion.js', 'donar.js']
 leer = lambda *p: open(os.path.join(R, *p), encoding='utf-8').read()
 def sin_mapa(js): return '\n'.join(l for l in js.split('\n') if not l.startswith('//# sourceMappingURL')).strip()
 g = leer('juego', 'base.html')

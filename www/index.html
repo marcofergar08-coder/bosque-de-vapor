@@ -2070,7 +2070,7 @@ const netMulti=()=>NET.on&&NET.host&&NET.pl.length>1;
 const _ea8=enemyAI;enemyAI=function(e,dt){if(!netMulti())return _ea8(e,dt);
   let q=P,bd=Infinity;for(const o of NET.pl){if(o.dn||o.off)continue;const d=Math.hypot(o.x-e.x,o.y-e.y);if(d<bd){bd=d;q=o}}
   return withP(q,()=>_ea8(e,dt))};
-function netEnd(w){netAll({t:'end',w,k:S.kills,tm:Math.floor(S.t),c:S.coins})}
+function netEnd(w){netAll({t:'end',w,k:S.kills,tm:Math.floor(S.t),c:S.coins,bs:S.bk|0,...(S.inf?{wv:S.inf.done|0,iw:S.inf.w|0}:{})})}
 const _ov8=over;over=function(){if(netMulti()&&!NET.end){if(P.hp<=0)netDown(P);return}
   if(NET.on&&NET.host)netEnd(0);NET.end=0;return _ov8()};
 const _wn8=win;win=function(){if(NET.on&&NET.host)netEnd(1);return _wn8()};
@@ -2212,6 +2212,145 @@ const _mn8=menu;menu=function(){if(NET.host&&NET.on&&S&&!S.ended)netEnd(0);const
   return r};
 function netLeaveGame(){NET.leaving=1;if(window.onNetLeave)onNetLeave();netSend({t:'bye'});setTimeout(()=>netClose(),150);run=false;menu()}
 const _tp8=togglePause;togglePause=function(f){if(NET.on&&!NET.host){if(!f&&!pm){pm=true;scr(`<div class="box"><h1>Menú</h1><p>La partida sigue en marcha para los demás.</p><button class="opt big" id="nrs">${IC('play')}<div><b>Seguir jugando</b></div></button><button class="opt" id="nlv">${IC('back')}<div><b>Abandonar la partida</b></div></button></div>`);$('nrs').onclick=()=>{pm=false;ov.style.display='none'};$('nlv').onclick=()=>{pm=false;netLeaveGame()}}else if(pm&&!f){pm=false;ov.style.display='none'}return}return _tp8(f)};
+
+/* ===== Fase 13: modo Infinito =====
+ Oleadas sin fin: cada oleada tiene un número de demonios que hay que derrotar, un descanso
+ corto después, un jefe cada 5 oleadas, eventos y desafíos al azar e hitos (10, 25, 50, 100
+ y luego cada 50). La dificultad sigue subiendo sin tope de oleadas, pero con límites de
+ demonios vivos a la vez para que el juego no se atasque. En las partidas en grupo todo lo
+ decide el anfitrión y los demás lo reciben con el resto del estado (S.inf). */
+const INF={next:0,retry:0,show:0};
+const INF_MIL=[10,25,50,100];
+const infMil=w=>INF_MIL.includes(w)||(w>100&&w%50===0);
+// Oleada con la que se calculan vida, velocidad y daño de los demonios: igual hasta la 20 y
+// después sube más despacio, para que las oleadas altas sean duras sin números absurdos.
+const infSW=w=>w<=20?w:20+(w-20)*.75;
+// Además, a partir de la oleada 12 los demonios ganan vida y daño extra que crece cada vez más
+// deprisa: los héroes también se hacen muy fuertes y la partida tiene que acabar llegando a su límite.
+const infHP=w=>1+.06*Math.max(0,w-12)+.0025*Math.pow(Math.max(0,w-30),2);
+const infDM=w=>1+.025*Math.max(0,w-15);
+const INF_DM={a:0,s:1,n:1.3,x:1.6};
+// Misma fórmula que el servidor (inf_score); la que cuenta es la del servidor.
+const infScore=(w,k,b,d)=>Math.min(2e9,Math.round((5*w*(w+1)+40*w+Math.min(k,1e7)+250*b)*(INF_DM[d]==null?1:INF_DM[d])));
+const fmtN=n=>Math.round(n).toLocaleString('es-ES');
+const INF_EV={
+  enjambre:{n:'Enjambre',d:'Bandadas de murciélagos de ceniza',cnt:1.4,ty:'vol'},
+  blindados:{n:'Blindados',d:'Demonios con un 60 % más de vida, pero menos',cnt:.75,hp:1.6,xp:1.5},
+  estampida:{n:'Estampida',d:'Demonios un 30 % más rápidos',sp:1.3},
+  elites:{n:'Noche de élites',d:'Llegan élites extra con cofres',el:3},
+  oro:{n:'Lluvia de oro',d:'Los demonios sueltan más monedas',gold:1},
+  niebla:{n:'Bruma espesa',d:'Espectros de bruma por todas partes',ty:'brm',cnt:1.1},
+  gigantes:{n:'Pisadas de gigante',d:'Demonios gigantes en la oleada',ty:'gig',cnt:.8},
+  cofre:{n:'Cofre del bosque',d:'Aparece un cofre al empezar',chest:1},
+  intocable:{n:'Desafío: intocable',d:'Supera la oleada sin recibir daño',ch:'hurt'},
+  reloj:{n:'Desafío: contrarreloj',d:'Supera la oleada a tiempo',ch:'time'}};
+const INF_EVK=Object.keys(INF_EV);
+/* ---- guardado local: récord del Infinito en este dispositivo ---- */
+function infSan(x){const n=v=>Number.isFinite(+v)&&+v>=0?Math.min(2e9,Math.floor(+v)):0;const o={runs:0,best:null};
+  if(x&&typeof x==='object'){o.runs=n(x.runs);const b=x.best;if(b&&typeof b==='object')o.best={sc:n(b.sc),w:n(b.w),t:n(b.t),k:n(b.k),b:n(b.b),d:['a','s','n','x'].includes(b.d)?b.d:'s'}}
+  return o}
+{const _sz=sanitize;sanitize=function(r){const s=_sz(r);s.inf=infSan(r&&r.inf);return s};
+ try{const raw=localStorage.getItem(SK);SAVE.inf=infSan(raw?JSON.parse(raw).inf:null)}catch(e){SAVE.inf=infSan(null)}}
+/* ---- empezar ---- */
+{const _st=start;start=function(h){const inf=(INF.next||INF.retry)&&!PSPEC;INF.next=0;INF.show=0;const r=_st(h);
+  if(inf&&S){S.inf={w:0,st:'rest',rt:4,q:0,left:0,tot:0,done:0,sc:0,ev:'',bt:0,lt:S.t,tw:0,hurt:0,lim:0,np:1};
+    S.sched=[];S.L=1e9;S.xt=1e12;S.sp=1;S.wl=1e12;toast('Modo Infinito: aguanta todas las oleadas que puedas','boss')}
+  return r}}
+{const _mn=menu;menu=function(){INF.retry=0;INF.show=0;return _mn.apply(this,arguments)}}
+// En el Infinito los demonios no salen poco a poco por tiempo: los saca cada oleada.
+{const _sk=spawnTick;spawnTick=function(w){if(S&&S.inf){S.sp=1;return}return _sk(w)}}
+// Cada demonio nace con la fuerza de su oleada y con lo que diga el evento de la oleada.
+{const _se=spawnEnemy;spawnEnemy=function(k,x,y,o){if(!S||!S.inf)return _se(k,x,y,o);const I=S.inf,w0=S.wave;S.wave=Math.max(1,Math.floor(infSW(I.w||1)));
+  let e;try{e=_se(k,x,y,o)}finally{S.wave=w0}const ev=INF_EV[I.ev]||{};const th=1+.15*((I.np||1)-1);
+  e.hp=Math.max(1,Math.round(e.hp*(ev.hp||1)*th*infHP(I.w||1)));if(e.d>0)e.d=Math.round(e.d*infDM(I.w||1));if(ev.sp)e.sp*=ev.sp;if(ev.xp)e.xp=Math.round(e.xp*ev.xp);if(INF.mark)e.iw=I.w;return e}}
+{const _hp=hurtP;hurtP=function(d){if(S&&S.inf&&S.inf.st==='fight'&&!(P.ivf>0))S.inf.hurt=1;return _hp(d)}}
+{const _dr=drops;drops=function(e){const n0=G.length,r=_dr(e);if(!S||!S.inf)return r;
+  // Con muchas oleadas salen muchos élites: si ya hay muchos cofres por recoger, el élite suelta monedas.
+  if(e.el&&G.length>n0&&G[G.length-1].ch&&G.reduce((n,g)=>n+(g.ch?1:0),0)>10){G.pop();for(let i=0;i<3;i++)G.push({x:e.x+i*8,y:e.y,v:3,c:1})}
+  if(S.inf.ev==='oro'&&!e.boss&&Math.random()<.35)G.push({x:e.x-6,y:e.y+6,v:2,c:1});return r}}
+/* ---- oleadas ---- */
+const infHost=()=>!!(S&&S.inf&&run&&!(NET.on&&!NET.host));
+const infAlive=()=>NET.on&&NET.host&&NET.pl.length>1?NET.pl.filter(q=>!q.off&&!q.dn):[P];
+function infBegin(){const I=S.inf,w=++I.w;S.wave=w;const sw=infSW(w);
+  I.np=NET.on&&NET.host?Math.max(1,NET.pl.filter(q=>!q.off).length):1;const tm=[1,1.6,2.1,2.6][I.np-1]||2.6;
+  const boss=w%5===0;let ev='';
+  if(!boss&&w>=3&&Math.random()<.55){const opts=INF_EVK.filter(k=>k!==I.ev&&!(k==='reloj'&&w<6));ev=opts[Math.floor(Math.random()*opts.length)]}
+  I.ev=ev;const E0=INF_EV[ev]||{};
+  let n=Math.round((10+3.2*Math.pow(w,.85))*tm*(E0.cnt||1));if(boss)n=Math.round(n*.45);
+  I.q=n;I.tot=n;I.tw=0;I.hurt=0;I.bt=.4;I.st='fight';I.lim=E0.ch==='time'?Math.round(25+n*.9):0;
+  INF.mark=1;try{
+    if(boss){const k=Math.floor(w/5)-1;S.bc=Math.floor(k/3);spawnBoss(k%3,false);const b=E[E.length-1];if(b&&b.boss){b.iw=w;if(I.np>1){b.hp=Math.round(b.hp*(1+.35*(I.np-1)));b.mhp=b.hp}}I.tot++}
+    const ne=(w%3===0?Math.min(5,1+Math.floor(w/9)):0)+(E0.el||0);for(let i=0;i<ne;i++){spawnElite();I.tot++}
+  }finally{INF.mark=0}
+  if(E0.chest){const a=infAlive()[0]||P;G.push({x:a.x+40,y:a.y-20,v:0,ch:1})}
+  const msg='Oleada '+w+(ev?' · '+E0.n+': '+E0.d+(I.lim?' ('+I.lim+' s)':''):'');toast(msg,boss?'boss':ev?'elite':'');sfx(boss?4:3);
+  if(!boss&&(ev||w===1))S.intro={nm:'Oleada '+w,sub:ev?E0.n+' · '+E0.d:'¡Que empiece la noche!',t:2.2,col:'#d9a441',k:'inf'}}
+function infSpawn(d){const I=S.inf,w=I.w,sw=Math.max(1,Math.floor(infSW(w)));I.bt-=d;if(I.bt>0||I.q<=0)return;
+  const cap=Math.min(150,30+w*4);let live=0;for(const e of E)if(e.iw===w&&!e.dead)live++;if(live>=cap||E.length>=210){I.bt=.25;return}
+  const al=infAlive(),a0=al[Math.floor(Math.random()*al.length)]||P,E0=INF_EV[I.ev]||{};
+  let b=Math.min(I.q,2+Math.floor(w/4),Math.max(1,cap-live));const ang=Math.random()*6.283,dd=Math.hypot(W,H)/Z/2+40;
+  INF.mark=1;try{while(b>0){const k=E0.ty&&Math.random()<.55?E0.ty:pickType(sw),g=Math.min(b,ARCH[k].grp||1);
+    for(let i=0;i<g;i++){const aa=ang+(i-1)*.12+(Math.random()-.5)*.5;spawnEnemy(k,a0.x+Math.cos(aa)*dd,a0.y+Math.sin(aa)*dd)}b-=g;I.q-=g}}
+  finally{INF.mark=0}
+  I.bt=Math.max(.3,1.3-w*.025)}
+function infEnd(){const I=S.inf,w=I.w;I.done=w;I.st='rest';I.rt=w%5===0?9:6;
+  let c=4+Math.floor(w*1.5);const out=['Oleada '+w+' superada'];
+  const E0=INF_EV[I.ev]||{};
+  if(E0.ch==='hurt'){if(!I.hurt){c+=25+w;out.push('desafío superado')}else out.push('desafío fallado')}
+  if(E0.ch==='time'){if(I.tw<=I.lim){c+=25+w;out.push('desafío superado')}else out.push('desafío fallado')}
+  if(infMil(w)){const mb=w>=100?1000:w>=50?400:w>=25?150:50;c+=mb;const a=infAlive()[0]||P;G.push({x:a.x+36,y:a.y+10,v:0,ch:2});
+    S.intro={nm:'¡Oleada '+w+'!',sub:'Hito del modo Infinito · +'+mb+' monedas y un cofre raro',t:3.4,col:'#d9a441',k:'inf'};sfx('win')}
+  S.coins+=Math.round(c*(S.F?S.F.M.coin:1));
+  // descanso: todos se curan un poco, los caídos vuelven y hay experiencia extra
+  const pl=NET.on&&NET.host&&NET.pl.length>1?NET.pl:[P];
+  for(const q of pl){if(q.off)continue;if(q.dn)q.dn=.01;q.hp=Math.min(q.max,q.hp+q.max*.15)}
+  P.xp+=P.next*.3;I.ev='';
+  I.sc=infScore(I.done,S.kills,S.bk,S.dif);
+  toast(out.join(' · ')+' · +'+c+' monedas','chest')}
+function infTick(){const I=S.inf,d=S.t-I.lt;I.lt=S.t;if(!(d>0)||d>1)return;
+  if(I.st==='rest'){I.rt-=d;if(I.rt<=0)infBegin();return}
+  I.tw+=d;infSpawn(d);
+  let alive=0,boss=0;for(const e of E)if(e.iw===I.w&&!e.dead){alive++;if(e.boss)boss=1}
+  if(I.q+alive!==I.left)I.lk=I.tw;I.left=I.q+alive;I.boss=boss;
+  // Rezagados: si quedan pocos y llevan un rato sin caer (huyen o se han quedado lejos),
+  // vuelven a aparecer cerca de un jugador para que la oleada no se quede atascada.
+  if(I.q<=0&&alive>0&&!boss&&alive<=Math.max(3,Math.ceil(I.tot*.15))&&I.tw-(I.lk||0)>20){I.lk=I.tw-5;const al=infAlive();
+    for(const e of E)if(e.iw===I.w&&!e.dead){const a0=al[Math.floor(Math.random()*al.length)]||P,an=Math.random()*6.283;e.x=a0.x+Math.cos(an)*190;e.y=a0.y+Math.sin(an)*190;fxr(e.x,e.y,40,'#c9243a',.4)}
+    toast('¡Los últimos demonios de la oleada vuelven a por ti!','elite')}
+  if(I.q<=0&&alive===0&&!S.bd)infEnd()}
+{const _up=update;update=function(dt){if(!infHost())return _up(dt);const I=S.inf;
+  // la oleada que el juego calcula por tiempo pasa a ser la oleada del Infinito
+  S.wl=I.w<=1?1e12:Math.max(1e-6,(S.t+dt)/(I.w-.5));
+  const r=_up(dt);if(S&&S.inf&&run&&!S.ended)infTick();return r}}
+/* ---- marcador ---- */
+{const _uh=updHud;updHud=function(){_uh();if(!S||!S.inf||!P)return;const I=S.inf,E0=INF_EV[I.ev]||{};
+  const t=I.st==='rest'?(I.w?'Oleada '+I.w+' superada · siguiente en '+Math.max(0,Math.ceil(I.rt))+' s':'Prepárate · oleada 1 en '+Math.max(0,Math.ceil(I.rt))+' s')
+    :'Oleada '+I.w+' · quedan '+(I.left||0)+(I.boss?' · ¡Jefe!':'')+(E0.ch==='time'?' · '+Math.max(0,Math.ceil(I.lim-I.tw))+' s':'')+(E0.ch==='hurt'?(I.hurt?' · desafío fallado':' · sin daño'):'');
+  setT(hd.wn,t+' · '+fmtN(infScore(I.done,S.kills,S.bk,S.dif))+' pts'+(S.dif&&S.dif!=='s'?' · '+DIFS[S.dif].n:''))}}
+/* ---- final de la partida ---- */
+function infSummary(){const I=S.inf;return `<div class="note" id="infres" style="text-align:left"><b>Modo Infinito</b><br>Oleada alcanzada: <b>${I.w}</b> (${I.done} superadas) · Jefes: ${S.bk}<br>
+  Tiempo: ${fmt(S.t)} · Demonios: ${fmtN(S.kills)} · Puntuación: <b>${fmtN(I.sc)}</b>${INF.rec?'<br><b>¡Nuevo récord en este dispositivo!</b>':''}</div>`}
+{const _er=endRun;endRun=function(w){const first=S&&S.inf&&!S.ended;const r=_er(w);
+  if(first){const I=S.inf;I.sc=infScore(I.done,S.kills,S.bk,S.dif);INF.retry=!NET.on;INF.show=1;INF.rec=0;
+    const s=SAVE.inf||(SAVE.inf=infSan(null));s.runs=Math.min(2e9,s.runs+1);
+    if(S.dif!=='a'&&(!s.best||I.sc>s.best.sc)){s.best={sc:I.sc,w:I.w,t:Math.floor(S.t),k:S.kills,b:S.bk,d:S.dif};INF.rec=1}save()}
+  return r}}
+{const _scr=scr;scr=function(h){const r=_scr(h);if(INF.show&&S&&S.inf&&!$('infres')){const bx=ov.querySelector('.box');if(bx){const d=document.createElement('div');d.innerHTML=infSummary();const b=bx.querySelector('.opt');if(b)b.parentNode.insertBefore(d.firstChild,b);else bx.appendChild(d.firstChild)}}return r}}
+// Invitado: el anfitrión manda al final las oleadas y jefes exactos.
+if(typeof netGuestEnd==='function'){const _ge=netGuestEnd;netGuestEnd=function(m){if(S&&S.inf){if(m.wv!=null){S.inf.done=m.wv|0;S.inf.w=m.iw|0||S.inf.w}if(m.bs!=null)S.bk=m.bs|0;
+  S.inf.sc=infScore(S.inf.done,m.k|0,S.bk|0,S.dif);INF.show=1;INF.rec=0}return _ge.apply(this,arguments)}}
+{const _ne=window.onNetEnd;window.onNetEnd=null;Object.defineProperty(window,'onNetEnd',{configurable:true,get(){return INF._one},set(f){INF._one=f?function(m){if(S&&S.inf){if(m.wv!=null){S.inf.done=m.wv|0}if(m.bs!=null)S.bk=m.bs|0}return f.apply(this,arguments)}:f}});if(_ne)window.onNetEnd=_ne}
+/* ---- en grupo: estar cerca de un compañero caído lo levanta antes ---- */
+if(typeof netDownTick==='function'){const _nd=netDownTick;netDownTick=function(q,dt){if(q.dn&&NET.on&&NET.host){for(const o of NET.pl){if(o===q||o.dn||o.off)continue;if(Math.hypot(o.x-q.x,o.y-q.y)<70){q.dn-=dt*2;break}}}return _nd(q,dt)}}
+/* ---- menú: botón del modo Infinito ---- */
+{const _mn=menu;menu=function(){const r=_mn.apply(this,arguments);const a=$('mplay');if(a&&!$('minf')){const b=SAVE.inf&&SAVE.inf.best,x=document.createElement('button');x.className='opt big';x.id='minf';
+  x.innerHTML=IC('star')+`<div><b>Modo Infinito</b><span>Oleadas sin fin${b?' · récord: oleada '+b.w+', '+fmtN(b.sc)+' pts':' · ¿hasta dónde llegarás?'}</span></div>`;a.after(x);
+  x.onclick=()=>{const h=HID(SAVE.last)&&isUn(HID(SAVE.last))?HID(SAVE.last):HEROES[0];INF.next=1;start(h)}}return r}}
+/* ---- sala con código: el anfitrión elige partida normal o Infinito ---- */
+if(typeof netLobby==='function'){const _nl=netLobby;netLobby=function(){const r=_nl.apply(this,arguments);const g=$('ngo');if(g&&!$('ninf')&&NET.host&&!run){
+  const x=document.createElement('button');x.className='opt';x.id='ninf';const draw=()=>{x.innerHTML=IC('star')+`<div><b>Modo: ${INF.lobby?'Infinito':'Normal'}</b><span>${INF.lobby?'Oleadas sin fin':'Con jefe final'} · toca para cambiar</span></div>`};draw();
+  x.onclick=()=>{INF.lobby=!INF.lobby;draw()};g.after(x);const go=g.onclick;g.onclick=()=>{INF.next=INF.lobby?1:0;go&&go()}}return r}}
+window.INF=INF;
 
 /* ===== Fase 9: cuentas, perfil y guardado en la nube (Supabase) =====
  Rellena SB.url y SB.key con los datos de tu proyecto (Supabase > Project Settings > API).
@@ -2402,7 +2541,11 @@ sbInit();
 /* ===== Fase 10: amigos, perfiles de otros jugadores, grupos e invitaciones =====
  Los cambios llegan al momento por tiempo real de Supabase cuando está disponible y,
  en cualquier caso, se comprueban cada pocos segundos mientras la pantalla está abierta. */
-const MODES={solo:'Solitario',duo:'Dúos',trio:'Tríos',squad:'Escuadrones'},MSIZE={solo:1,duo:2,trio:3,squad:4};
+const MODES={solo:'Solitario',duo:'Dúos',trio:'Tríos',squad:'Escuadrones'},MSIZE={solo:1,duo:2,trio:3,squad:4},VARS={normal:'Normal',inf:'Infinito'};
+// Tipo de partida elegido para crear grupo o buscar jugadores (normal o Infinito).
+let SOV='normal';try{SOV=localStorage.getItem('bdv_var')==='inf'?'inf':'normal'}catch(e){}
+const soVar=v=>{SOV=v==='inf'?'inf':'normal';try{localStorage.setItem('bdv_var',SOV)}catch(e){}};
+const soVarBtns=(cur,lead)=>`<div class="rbtn">${Object.keys(VARS).map(v=>`<button class="opt" id="sov_${v}" ${lead?'':'disabled'} ${cur===v?'aria-pressed="true" style="background:#141210;color:#f3ecd8"':''}><b>${VARS[v]}</b><span>${v==='inf'?'Oleadas sin fin':'Con jefe final'}</span></button>`).join('')}</div>`;
 const SO={tab:'fr',poll:0,inv:[],invT:0,ch:null,party:null,seen:{}};
 const dot=st=>`<span title="${st==='online'?'Conectado':st==='playing'?'Jugando':'Desconectado'}" style="display:inline-block;width:10px;height:10px;border-radius:50%;border:2px solid #141210;margin-right:6px;background:${st==='online'?'#2a7a2a':st==='playing'?'#ffd23d':'transparent'}"></span>`;
 {const st=document.createElement('style');st.textContent=`.sotabs{display:flex;gap:6px;margin:6px 0 10px}.sotabs .opt{margin:0;padding:8px 6px;justify-content:center;flex:1}.sotabs .opt[aria-pressed=true]{background:#141210;color:#f3ecd8}
@@ -2454,8 +2597,8 @@ async function soProfile(name,back){scr(`<div class="box wide"><h1>Perfil</h1><d
     el.innerHTML=`<div class="acav"><button tabindex="-1">${heroImg(p.avatar)}</button></div><h2 style="margin:4px 0">${p.status?dot(p.status):''}${esc(p.username)}</h2>
     <p>Nivel ${p.level}${p.country?' · '+esc(p.country):''}${p.friend?' · Amigo':''}</p>
     ${p.visible?`<div class="rows">${Object.keys(MODES).map(m=>st[m]?`<div><span>${MODES[m]}</span><b>${st[m].points} pts · ${st[m].division} · ${st[m].wins}/${st[m].games} victorias</b></div>`:'').join('')||'<div><span>Esta temporada</span><b>Sin partidas</b></div>'}
-      ${p.totals?`<div><span>Total</span><b>${p.totals.games} partidas · ${p.totals.wins} victorias</b></div>`:''}</div>
-      ${h.length?'<h3>Últimas partidas</h3><div class="rows">'+h.map(x=>`<div><span>${MODES[x.mode]||x.mode} · ${new Date(x.date).toLocaleDateString('es-ES')}</span><b>${x.survived!=null?fmt(x.survived)+' · '+x.kills+' ☠ · '+(x.won?'Victoria':'Derrota')+' · '+x.score+' pts':'Sin terminar'}</b></div>`).join('')+'</div>':''}`
+      ${p.totals?`<div><span>Total</span><b>${p.totals.games} partidas · ${p.totals.wins} victorias</b></div>`:''}</div>${typeof infProfileHtml==='function'?infProfileHtml(p.inf):''}
+      ${h.length?'<h3>Últimas partidas</h3><div class="rows">'+h.map(x=>`<div><span>${MODES[x.mode]||x.mode} · ${new Date(x.date).toLocaleDateString('es-ES')}</span><b>${x.survived!=null?fmt(x.survived)+' · '+x.kills+' ☠ · '+(x.variant==='inf'?'Infinito: oleada '+(x.waves|0):x.won?'Victoria':'Derrota')+' · '+x.score+' pts':'Sin terminar'}</b></div>`).join('')+'</div>':''}`
       :'<div class="note">Este perfil es privado.</div>'}
     ${p.me?'':`<div class="acrow" style="flex-wrap:wrap;justify-content:center;margin-top:10px">${p.friend?soB('del|'+name,'Quitar amigo'):soB('add|'+name,'Añadir amigo',1)}${soB('blk|'+name,'Bloquear')}${soB('rep|'+name,'Denunciar')}</div>`}`;
     soActs({add:async u=>{await rpc('send_friend_request',{p_username:u});acMsg('Solicitud enviada.')},del:async u=>{await rpc('remove_friend',{p_username:u});soProfile(u,back)},
@@ -2475,16 +2618,18 @@ async function soParty(){scr(`<div class="box wide"><h1>Grupo</h1>${soTabs('pt')
   const draw=async()=>{const p=await rpc('get_party'),el=$('sog');if(!el)return;SO.party=p;
     if(!p){soRealtime(null);const inv=await rpc('list_invites');
       el.innerHTML=(inv.length?'<h3>Te han invitado</h3><div class="solist">'+inv.map(i=>`<div><span><b>${esc(i.from)}</b> · ${MODES[i.mode]}</span>${soB('join|'+i.code,'Unirme',1)}</div>`).join('')+'</div>':'')+
-      `<p>Crea un grupo y comparte el código, o invita a tus amigos.</p><div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="som_${m}"><b>${MODES[m]}</b><span>${MSIZE[m]} jugadores</span></button>`).join('')}</div>
+      `<p>Tipo de partida</p>${soVarBtns(SOV,1)}<p>Crea un grupo y comparte el código, o invita a tus amigos.</p><div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="som_${m}"><b>${MODES[m]}</b><span>${MSIZE[m]} jugadores</span></button>`).join('')}</div>
       <h3>Jugar con otros jugadores</h3><p class="acsm">Te buscamos compañeros de tu misma dificultad (${DIFS[mmDif()].n}).</p>
       <div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="soq_${m}"><b>${MODES[m]}</b><span>Buscar</span></button>`).join('')}</div>
       <label class="acl" for="socd">¿Tienes un código de grupo?</label><div class="acrow"><input class="acf" id="socd" maxlength="6" autocomplete="off" style="text-transform:uppercase" data-go="sojn"><button class="sob w" id="sojn">Unirme</button></div>`;
       acKeys();for(const m of ['duo','trio','squad'])$('soq_'+m).onclick=()=>acBusy('soq_'+m,()=>mmJoin(m));
-      for(const m of ['duo','trio','squad'])$('som_'+m).onclick=()=>acBusy('som_'+m,async()=>{await rpc('create_party',{p_mode:m});draw()});
+      for(const m of ['duo','trio','squad'])$('som_'+m).onclick=()=>acBusy('som_'+m,async()=>{await rpc('create_party',{p_mode:m});if(SOV==='inf')await rpc('set_party_variant',{p_variant:'inf'});draw()});
+      for(const v of Object.keys(VARS))$('sov_'+v).onclick=()=>{soVar(v);draw()};
       $('sojn').onclick=()=>acBusy('sojn',async()=>{const c=$('socd').value.trim().toUpperCase();if(!/^[A-Z0-9]{6}$/.test(c))return acMsg('El código tiene 6 letras o números.',true);await rpc('join_party',{p_code:c});draw()});
       soActs({join:async c=>{await rpc('join_party',{p_code:c});draw()}});return}
     soRealtime(p.id);const me=p.members.find(m=>m.username===ME.username)||{},full=p.members.length===p.size,allReady=p.members.every(m=>m.ready||m.leader);
-    el.innerHTML=`<p>Código del grupo</p><div class="socode">${esc(p.code)}</div><p>${MODES[p.mode]} · ${p.members.length} de ${p.size} jugadores</p>
+    el.innerHTML=`<p>Código del grupo</p><div class="socode">${esc(p.code)}</div><p>${MODES[p.mode]} · ${VARS[p.variant]||'Normal'} · ${p.members.length} de ${p.size} jugadores</p>
+      ${p.me_leader?soVarBtns(p.variant,1):''}
       ${p.me_leader?`<div class="rbtn">${['duo','trio','squad'].map(m=>`<button class="opt" id="som_${m}" ${p.mode===m?'aria-pressed="true" style="background:#141210;color:#f3ecd8"':''}><b>${MODES[m]}</b></button>`).join('')}</div>`:''}
       <div class="solist">${p.members.map(m=>soRow({...m,note:m.leader?'Líder':m.ready?'Listo':'No está listo'},p.me_leader&&!m.leader?soB('kick|'+m.username,'Expulsar'):'')).join('')}
       ${Array.from({length:p.size-p.members.length},()=>'<div><span><i>Hueco libre</i></span></div>').join('')}</div>
@@ -2493,11 +2638,12 @@ async function soParty(){scr(`<div class="box wide"><h1>Grupo</h1>${soTabs('pt')
       ${p.size>p.members.length?`<button class="opt" id="soinv">${IC('user')}<div><b>Invitar amigos</b></div></button>`:''}
       ${p.me_leader&&p.size>p.members.length&&p.members.length>1?`<button class="opt" id="soqp">${IC('star')}<div><b>Completar con otros jugadores</b><span>Buscar ${p.size-p.members.length} más</span></div></button>`:''}
       <button class="opt" id="solv">${IC('back')}<div><b>Salir del grupo</b></div></button>`;
+    if(p.me_leader)for(const v of Object.keys(VARS))$('sov_'+v).onclick=()=>acBusy('sov_'+v,async()=>{soVar(v);await rpc('set_party_variant',{p_variant:v});draw()});
     if(p.me_leader)for(const m of ['duo','trio','squad'])$('som_'+m).onclick=()=>acBusy('som_'+m,async()=>{await rpc('set_party_mode',{p_mode:m});draw()});
     if($('sordy'))$('sordy').onclick=()=>acBusy('sordy',async()=>{await rpc('set_ready',{p_ready:!me.ready});draw()});
     if($('sogo'))$('sogo').onclick=()=>acBusy('sogo',()=>ptStart(p));
     if($('soinv'))$('soinv').onclick=soInvitePick;
-    if($('soqp'))$('soqp').onclick=()=>acBusy('soqp',()=>mmJoin(p.mode));
+    if($('soqp'))$('soqp').onclick=()=>acBusy('soqp',()=>mmJoin(p.mode,p.variant));
     $('solv').onclick=()=>acBusy('solv',async()=>{await rpc('leave_party');soRealtime(null);draw()});
     soActs({kick:async u=>{await rpc('kick_member',{p_username:u});draw()}});
     if(window.ptWatch)ptWatch(p)};
@@ -2509,9 +2655,9 @@ async function soInvitePick(){scr(`<div class="box"><h1>Invitar amigos</h1><div 
 
 // ---- Emparejamiento ----
 const mmDif=()=>{const d=curDif();return ['s','n','x'].includes(d)?d:'s'};
-async function mmJoin(mode){if(!['s','n','x'].includes(curDif()))return acMsg('Para buscar jugadores elige la dificultad Supervivencia o una más difícil (menú › Dificultad). La Aventura no cuenta para la clasificación.',true);const r=await rpc('queue_join',{p_mode:mode,p_difficulty:mmDif()});mmScreen(r)}
+async function mmJoin(mode,variant){if(!['s','n','x'].includes(curDif()))return acMsg('Para buscar jugadores elige la dificultad Supervivencia o una más difícil (menú › Dificultad). La Aventura no cuenta para la clasificación.',true);const r=await rpc('queue_join',{p_mode:mode,p_difficulty:mmDif(),p_variant:variant||SOV});mmScreen(r)}
 function mmScreen(r){if(!r.queued)return mmFound(r);const t0=Date.parse(r.since)||Date.now();
-  scr(`<div class="box"><h1>Buscando jugadores</h1><p>${MODES[r.mode]} · ${DIFS[r.difficulty].n}</p><p style="font-size:28px" id="mmt">0:00</p><p id="mmw">${r.waiting} de ${r.size} en la cola</p>
+  scr(`<div class="box"><h1>Buscando jugadores</h1><p>${MODES[r.mode]} · ${VARS[r.variant]||'Normal'} · ${DIFS[r.difficulty].n}</p><p style="font-size:28px" id="mmt">0:00</p><p id="mmw">${r.waiting} de ${r.size} en la cola</p>
   <p class="acsm">Si cierras el juego, sales de la cola.</p><div id="acm"></div><button class="opt" id="mmx">${IC('back')}<div><b>Cancelar</b></div></button></div>`);
   $('mmx').onclick=()=>acBusy('mmx',async()=>{soStop();await rpc('queue_leave');soScreen('pt')});
   SO.poll=setInterval(async()=>{const el=$('mmt');if(!el)return soStop();el.textContent=fmt(Math.max(0,(Date.now()-t0)/1000));
@@ -2535,6 +2681,7 @@ setInterval(soCheckInv,10000);
  internet la partida se juega igual, solo que no cuenta para la clasificación. */
 const RK={mid:null,sent:0,info:'',pend:[],joining:0,timer:0};
 try{RK.pend=JSON.parse(localStorage.getItem('bdv_pend')||'[]')}catch(e){}
+const ptInfArgs=()=>S&&S.inf?{p_waves:S.inf.done|0,p_bosses:S.bk|0}:{};
 const ptSavePend=()=>{try{localStorage.setItem('bdv_pend',JSON.stringify(RK.pend.slice(-10)))}catch(e){}};
 const ptRankable=()=>!!(SESS&&S&&S.dif!=='a'&&!S.z7);
 /* el aviso del resultado se mantiene en la pantalla final aunque esta se vuelva a dibujar */
@@ -2543,25 +2690,26 @@ const ptRankable=()=>!!(SESS&&S&&S.dif!=='a'&&!S.z7);
 {const _st=start;start=function(h){RK.showOn=0;RK.msg='';const r=_st(h);RK.sent=0;RK.mid=null;RK.info='';
   if(NET.on&&NET.host){RK.mid=NET.mid}
   else if(!NET.on&&ptRankable()){const s0=S;RK.info='';
-    rpc('start_match',{p_difficulty:S.dif,p_map:S.map}).then(m=>{if(S!==s0)return;RK.mid=m.match;if(S.ended&&!RK.sent)ptSubmit(S.res_w,Math.floor(S.t),S.kills,P?P.lvl:1)})
+    rpc('start_match',{p_difficulty:S.dif,p_map:S.map,p_inf:!!S.inf}).then(m=>{if(S!==s0)return;RK.mid=m.match;if(S.ended&&!RK.sent)ptSubmit(S.res_w,Math.floor(S.t),S.kills,P?P.lvl:1)})
       .catch(e=>{if(S===s0)RK.info='Esta partida no cuenta para la clasificación: '+acErr(e)})}
   return r}}
 {const _er=endRun;endRun=function(w){const first=S&&!S.ended;const lvl=P?P.lvl:1;const r=_er(w);if(first&&S){S.res_w=!!w;if(!(NET.on&&!NET.host))ptSubmit(!!w,Math.floor(S.t),S.kills,lvl)}return r}}
 window.onNetStart=m=>{RK.sent=0;RK.mid=m.mid||null;RK.info='';soStop()};
 window.onNetEnd=m=>{if(RK.mid&&!RK.sent)ptSubmit(!!m.w,m.tm|0,m.k|0,P?P.lvl:1,!!m.lost)};
-window.onNetLeave=()=>{if(RK.mid&&!RK.sent&&S){RK.sent=1;const a={p_match:RK.mid,p_survived:Math.floor(S.t),p_kills:S.kills|0,p_level:Math.max(1,Math.min(120,P?P.lvl:1))};
+window.onNetLeave=()=>{if(RK.mid&&!RK.sent&&S){RK.sent=1;const a={p_match:RK.mid,p_survived:Math.floor(S.t),p_kills:S.kills|0,p_level:Math.max(1,Math.min(120,P?P.lvl:1)),...ptInfArgs()};
   rpc('abandon_match',a).catch(()=>{RK.pend.push({fn:'abandon_match',a});ptSavePend()})}};
 /* salir al menú a mitad de partida cuenta como abandono */
-{const _mn=menu;menu=function(){RK.showOn=0;RK.msg='';if(RK.mid&&!RK.sent&&S&&!S.ended&&(!NET.on||NET.host)){RK.sent=1;const a={p_match:RK.mid,p_survived:Math.floor(S.t),p_kills:S.kills|0,p_level:Math.max(1,Math.min(120,P?P.lvl:1))};
+{const _mn=menu;menu=function(){RK.showOn=0;RK.msg='';if(RK.mid&&!RK.sent&&S&&!S.ended&&(!NET.on||NET.host)){RK.sent=1;const a={p_match:RK.mid,p_survived:Math.floor(S.t),p_kills:S.kills|0,p_level:Math.max(1,Math.min(120,P?P.lvl:1)),...ptInfArgs()};
   rpc('abandon_match',a).catch(()=>{RK.pend.push({fn:'abandon_match',a});ptSavePend()})}return _mn.apply(this,arguments)}}
 function ptBox(t){RK.msg=t;if(!RK.showOn)return;let el=$('ptres');if(!el){const bx=ov.querySelector('.box');if(!bx)return;el=document.createElement('div');el.id='ptres';const b=bx.querySelector('.opt');if(b)b.parentNode.insertBefore(el,b);else bx.appendChild(el)}el.innerHTML=t?`<div class="note">${t}</div>`:''}
 async function ptSubmit(won,t,k,lvl,lost){RK.showOn=1;RK.msg='';if(RK.sent)return;if(!RK.mid){if(RK.info)ptBox(esc(RK.info));return}RK.sent=1;const mid=RK.mid;
-  const a={p_match:mid,p_survived:Math.max(0,t|0),p_kills:Math.max(0,k|0),p_won:!!won,p_level:Math.max(1,Math.min(120,lvl|0||1))};
+  const a={p_match:mid,p_survived:Math.max(0,t|0),p_kills:Math.max(0,k|0),p_won:!!won&&!(S&&S.inf),p_level:Math.max(1,Math.min(120,lvl|0||1)),...ptInfArgs()};
   ptBox('Enviando el resultado al servidor…');
   try{const r=await rpc('submit_result',a);ptShow(mid,r,0)}
   catch(e){if(/Failed to fetch|NetworkError|network/i.test(String(e&&e.message))){RK.pend.push({fn:'submit_result',a});ptSavePend();ptBox('Sin conexión: el resultado se enviará cuando vuelva internet.')}else ptBox(acErr(e))}}
 function ptShow(mid,r,n){if(!r)return;
-  if(r.status==='finished')ptBox(`Partida clasificada: <b>+${r.score} puntos</b>${r.flagged?' (los resultados de los jugadores no coincidían: se ha usado el más bajo)':''}`);
+  if(r.status==='finished'&&r.variant==='inf')ptBox(`Partida del Infinito verificada: <b>${fmtN(r.score)} puntos</b> · oleada ${r.waves} superada${r.flagged?' (los resultados de los jugadores no coincidían: se ha usado el más bajo)':''}`);
+  else if(r.status==='finished')ptBox(`Partida clasificada: <b>+${r.score} puntos</b>${r.flagged?' (los resultados de los jugadores no coincidían: se ha usado el más bajo)':''}`);
   else if(r.status==='active'){ptBox('Resultado enviado. Esperando a los demás jugadores para calcular los puntos…');if(n<40)setTimeout(async()=>{try{if($('ptres'))ptShow(mid,await rpc('get_match_result',{p_match:mid}),n+1)}catch(e){}},3000)}
   else if(r.status==='abandoned')ptBox('La partida no cuenta: no han llegado suficientes resultados.')}
 async function ptRetry(){if(!SESS||!RK.pend.length)return;const l=RK.pend;RK.pend=[];ptSavePend();
@@ -2579,7 +2727,7 @@ window.ptStart=async function(p){if(!window.Peer)throw new Error('No se ha podid
     if(n===p.size-1)go()};
   const go=async()=>{if(RK.go)return;RK.go=1;clearTimeout(RK.timer);
     try{const hs={};hs[ME.username]=(HID(SAVE.last)||HEROES[0]).id;for(const g of NET.gs)if(g.nm)hs[g.nm]=g.h.id;
-      const m=await rpc('start_match',{p_difficulty:curDif(),p_map:SAVE.map,p_heroes:hs,p_party:true});RK.go=0;netGo(m.match)}
+      const m=await rpc('start_match',{p_difficulty:curDif(),p_map:SAVE.map,p_heroes:hs,p_party:true,p_inf:p.variant==='inf'});RK.go=0;INF.next=m.variant==='inf'?1:0;netGo(m.match)}
     catch(e){RK.go=0;draw();acMsg(acErr(e),true)}};
   RK.go=0;
   if(reuse){NET.allow=others;NET.max=p.size;NET.opts.onLobby=draw;draw();
@@ -2597,25 +2745,32 @@ window.ptWatch=function(p){if(!p||p.me_leader||!p.room||run||!window.Peer)return
 // Desde el menú también se entra a la partida del grupo si el líder la ha empezado.
 setInterval(async()=>{if(!SESS||run||AC.view!=='menu'||!window.Peer)return;try{const p=await rpc('get_party');if(p&&p.room&&!p.me_leader){SO.party=p;ptWatch(p)}}catch(e){}},5000);
 
+// Las partidas del Infinito pueden durar horas: se avisa al servidor de que siguen vivas.
+setInterval(()=>{if(RK.mid&&!RK.sent&&run&&S&&S.inf&&!S.ended)rpc('match_heartbeat',{p_match:RK.mid}).catch(()=>{})},60000);
+
 /* ===== Fase 12: clasificación mundial, temporadas e historial =====
  Todo sale del servidor (get_leaderboard, get_my_rank). Si no hay nadie, se dice: nunca se
  muestran jugadores de ejemplo. */
-const LBV={mode:'solo',kind:'players',season:null,country:'',off:0,seasons:null};
+const LBV={v:'normal',mode:'solo',kind:'players',season:null,country:'',off:0,seasons:null};
 const DIVC={Bronce:'#a86a3d',Plata:'#8c8c8c',Oro:'#d9a400',Platino:'#3f8f8f',Leyenda:'#c9243a'};
 const divTag=d=>`<i class="rr" style="background:${DIVC[d]||'#141210'}">${esc(d)}</i>`;
 {const st=document.createElement('style');st.textContent=`.lbt{width:100%;border-collapse:collapse;font-size:14px;text-align:left}.lbt th{font-size:12px;border-bottom:2px solid #141210;padding:4px 3px}
 .lbt td{border-bottom:1px dashed #141210;padding:6px 3px;vertical-align:middle}.lbt tr.me td{background:#ffd23d}.lbt .n{text-align:right;white-space:nowrap}.lbt button{all:unset;cursor:pointer;font-weight:700;overflow-wrap:anywhere}
 .lbt .rr{font-style:normal;color:#fff;font-size:11px;padding:1px 5px;border-radius:3px}.lbf{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.lbf select,.lbf input{font:inherit;border:2px solid #141210;background:#f3ecd8;padding:5px;min-width:0}
+.box .sotabs{flex-wrap:wrap}.box .sotabs .opt{flex:1 1 auto;width:auto}.box .sotabs .opt b{font-size:clamp(13px,3.8vw,18px);white-space:nowrap}
 .lbme{border:3px solid #141210;background:#f3ecd8;padding:8px;margin:8px 0;text-align:left}@media (max-width:480px){.lbt .hm{display:none}}`;document.head.appendChild(st)}
 function lbOpen(){if(!sbOn())return acNoServer();LBV.off=0;lbScreen()}
 async function lbScreen(){const team=LBV.mode!=='solo';if(!team)LBV.kind='players';
+  const inf=LBV.v==='inf';
   scr(`<div class="box wide"><h1>Clasificación mundial</h1><div id="lbs" class="acsm"></div>
+  <div class="sotabs">${[['normal','Partida normal'],['inf','Modo Infinito']].map(k=>`<button class="opt" data-v="${k[0]}" aria-pressed="${LBV.v===k[0]}"><b>${k[1]}</b></button>`).join('')}</div>
   <div class="sotabs">${Object.keys(MODES).map(m=>`<button class="opt" data-m="${m}" aria-pressed="${LBV.mode===m}"><b>${MODES[m]}</b></button>`).join('')}</div>
   ${team?`<div class="sotabs">${[['players','Jugadores'],['teams','Equipos']].map(k=>`<button class="opt" data-k="${k[0]}" aria-pressed="${LBV.kind===k[0]}"><b>${k[1]}</b></button>`).join('')}</div>`:''}
   <div class="lbf"><select id="lbse" aria-label="Temporada"><option value="">Temporada actual</option></select>
   ${LBV.kind==='players'?`<input id="lbco" maxlength="2" placeholder="País (ES…)" aria-label="País" value="${esc(LBV.country)}" style="width:7em;text-transform:uppercase">`:''}</div>
   <div id="lbme"></div><div id="acm"></div><div id="lbl"><p>Cargando…</p></div><div id="lbmore"></div>
-  <p class="acsm">Puntos: la suma de tus 10 mejores partidas de la temporada. Solo cuentan las partidas verificadas por el servidor (no la Aventura ni las Hazañas).</p>${BK}</div>`);
+  <p class="acsm">${inf?'Cuenta tu mejor partida del Infinito de la temporada: primero la puntuación, después la oleada y el tiempo. Las oleadas se comprueban en el servidor.':'Puntos: la suma de tus 10 mejores partidas de la temporada.'} Solo cuentan las partidas verificadas por el servidor (no la Aventura ni las Hazañas).</p>${BK}</div>`);
+  ov.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{LBV.v=b.dataset.v;LBV.off=0;lbScreen()});
   $('bk').onclick=menu;
   ov.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{LBV.mode=b.dataset.m;LBV.off=0;lbScreen()});
   ov.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{LBV.kind=b.dataset.k;LBV.off=0;lbScreen()});
@@ -2626,7 +2781,7 @@ async function lbScreen(){const team=LBV.mode!=='solo';if(!team)LBV.kind='player
     const cur=LBV.seasons.find(s=>LBV.season?s.id===LBV.season:s.current);
     if(cur)$('lbs').textContent=cur.name+(cur.current?' · termina en '+Math.max(0,Math.ceil((Date.parse(cur.ends)-Date.now())/864e5))+' días':' · terminada');
     await lbRows()}catch(e){const l=$('lbl');if(l)l.innerHTML=`<div class="note warn">${acErr(e)}</div>`}}
-async function lbRows(){const args={p_mode:LBV.mode,p_season:LBV.season,p_country:LBV.kind==='players'&&LBV.country||null,p_kind:LBV.kind,p_limit:50,p_offset:LBV.off};
+async function lbRows(){if(LBV.v==='inf')return lbInfRows();const args={p_mode:LBV.mode,p_season:LBV.season,p_country:LBV.kind==='players'&&LBV.country||null,p_kind:LBV.kind,p_limit:50,p_offset:LBV.off};
   const rows=await rpc('get_leaderboard',args),el=$('lbl');if(!el)return;const team=LBV.kind==='teams';
   if(!rows.length&&!LBV.off){el.innerHTML=`<div class="note">Todavía no hay nadie en esta clasificación${LBV.country?' para este país':''}. ¡Juega una partida clasificada de ${MODES[LBV.mode]} para ser el primero!</div>`;$('lbmore').innerHTML=''}
   else{const mine=ME&&ME.username;
@@ -2645,8 +2800,8 @@ async function lbRows(){const args={p_mode:LBV.mode,p_season:LBV.season,p_countr
 /* historial propio */
 async function lbHistory(back){scr(`<div class="box wide"><h1>Mi historial</h1><div id="acm"></div><div id="lbl"><p>Cargando…</p></div><button class="opt" id="bk">${IC('back')}<div><b>Volver</b></div></button></div>`);$('bk').onclick=back||acProfile;
   try{const h=await rpc('get_history',{p_username:ME.username,p_limit:50}),el=$('lbl');if(!el)return;
-    el.innerHTML=h.length?`<table class="lbt"><thead><tr><th>Fecha</th><th>Modo</th><th class="n">Tiempo</th><th class="n hm">☠</th><th>Resultado</th><th class="n">Puntos</th></tr></thead><tbody>${h.map(x=>`<tr><td>${new Date(x.date).toLocaleDateString('es-ES')}</td><td>${MODES[x.mode]||esc(x.mode)}<br><small>${DIFS[x.difficulty]?DIFS[x.difficulty].n:''}</small></td>
-      <td class="n">${x.survived!=null?fmt(x.survived):'—'}</td><td class="n hm">${x.kills!=null?x.kills:'—'}</td><td>${x.status==='finished'?(x.won?'Victoria':'Derrota'):x.status==='active'?'En curso':'Abandonada'}</td><td class="n">${x.score!=null?x.score:'—'}</td></tr>`).join('')}</tbody></table>`
+    el.innerHTML=h.length?`<table class="lbt"><thead><tr><th>Fecha</th><th>Modo</th><th class="n">Tiempo</th><th class="n hm">☠</th><th>Resultado</th><th class="n">Puntos</th></tr></thead><tbody>${h.map(x=>`<tr><td>${new Date(x.date).toLocaleDateString('es-ES')}</td><td>${MODES[x.mode]||esc(x.mode)}${x.variant==='inf'?' · Infinito':''}<br><small>${DIFS[x.difficulty]?DIFS[x.difficulty].n:''}</small></td>
+      <td class="n">${x.survived!=null?fmt(x.survived):'—'}</td><td class="n hm">${x.kills!=null?x.kills:'—'}</td><td>${x.status==='finished'?(x.variant==='inf'?'Oleada '+(x.waves|0)+(x.bosses?' · '+x.bosses+' jefes':''):x.won?'Victoria':'Derrota'):x.status==='active'?'En curso':'Abandonada'}</td><td class="n">${x.score!=null?x.score:'—'}</td></tr>`).join('')}</tbody></table>`
       :'<p>Todavía no has jugado partidas clasificadas.</p>'}catch(e){acMsg(acErr(e),true)}}
 /* recompensas de la temporada que terminó */
 async function lbRewards(){try{const r=await rpc('claim_season_rewards');if(r&&r.coins>0){SAVE.coins+=r.coins;SAVE.earned=(SAVE.earned||0)+r.coins;save();toast('Recompensa de la temporada: +'+r.coins+' monedas','chest')}}catch(e){}}
@@ -2655,6 +2810,106 @@ async function lbRewards(){try{const r=await rpc('claim_season_rewards');if(r&&r
   x.innerHTML=IC('chart')+'<div><b>Mi historial</b><span>Tus partidas clasificadas</span></div>';a.before(x);x.onclick=()=>lbHistory()}return r}}
 {const _mn=menu;menu=function(){const r=_mn.apply(this,arguments);if(!run&&sbOn()&&!$('mlb')){const a=$('mnet')||$('mplay');if(a){const x=document.createElement('button');x.className='opt';x.id='mlb';
   x.innerHTML=IC('trophy')+'<div><b>Clasificación mundial</b><span>Solitario, dúos, tríos y escuadrones</span></div>';a.after(x);x.onclick=lbOpen}}return r}}
+
+/* ===== Modo Infinito: tablas mundiales, posición propia y récords del perfil ===== */
+async function lbInfRows(){const team=LBV.kind==='teams';
+  const rows=await rpc('get_inf_leaderboard',{p_mode:LBV.mode,p_season:LBV.season,p_country:!team&&LBV.country||null,p_kind:LBV.kind,p_limit:50,p_offset:LBV.off}),el=$('lbl');if(!el)return;
+  if(!rows.length&&!LBV.off){el.innerHTML=`<div class="note">Todavía no hay nadie en la clasificación del Infinito de ${MODES[LBV.mode]}${LBV.country?' para este país':''}. ¡Supera una oleada en una partida clasificada para ser el primero!</div>`;$('lbmore').innerHTML=''}
+  else{const mine=ME&&ME.username,st=LBV.off;
+    const html=rows.map((r,i)=>{const me=!team&&r.name===mine||team&&mine&&r.name.split(' · ').includes(mine);
+      return `<tr class="${me?'me':''}"><td class="n">${r.pos}</td>
+      <td>${team?`<button data-t="${st+i}" aria-expanded="false">${esc(r.name)} ▾</button>`:`<button data-u="${esc(r.name)}">${esc(r.name)}</button>`}${r.country?` <small>${esc(r.country)}</small>`:''}<br>${divTag(r.division)} <small>nv. ${r.level}</small></td>
+      <td class="n"><b>${r.wave}</b></td><td class="n"><b>${fmtN(r.score)}</b></td><td class="n hm">${fmt(r.time)}</td><td class="n hm">${fmtN(r.kills)}</td><td class="n hm">${r.bosses}</td><td class="n">${r.completed}/${r.games}</td></tr>
+      ${team?`<tr class="lbmem" id="lbt${st+i}" hidden><td></td><td colspan="7"><div class="rows">${(r.members||[]).map(m=>`<div><span><button data-u="${esc(m.name)}">${esc(m.name)}</button> · nv. ${m.level}</span><b>oleada ${m.wave} · ${fmtN(m.score)} pts · ${fmtN(m.kills)} ☠ · ${m.bosses} jefes · ${m.games} partida${m.games===1?'':'s'}</b></div>`).join('')}</div></td></tr>`:''}`}).join('');
+    if(LBV.off)el.querySelector('tbody').insertAdjacentHTML('beforeend',html);
+    else el.innerHTML=`<table class="lbt"><thead><tr><th class="n">#</th><th>${team?'Equipo':'Jugador'}</th><th class="n">Oleada</th><th class="n">Puntos</th><th class="n hm">Tiempo</th><th class="n hm">☠</th><th class="n hm">Jefes</th><th class="n" title="Partidas con alguna oleada superada / partidas">Compl./Part.</th></tr></thead><tbody>${html}</tbody></table>`;
+    el.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>soProfile(b.dataset.u,lbScreen));
+    el.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{const t=$('lbt'+b.dataset.t);if(!t)return;t.hidden=!t.hidden;b.setAttribute('aria-expanded',String(!t.hidden))});
+    $('lbmore').innerHTML=rows.length===50?`<button class="opt" id="lbm"><div><b>Ver más</b></div></button>`:'';if($('lbm'))$('lbm').onclick=()=>acBusy('lbm',async()=>{LBV.off+=50;await lbRows()})}
+  const me=$('lbme');if(!me||LBV.off)return;
+  if(!SESS){me.innerHTML=`<div class="lbme">Entra con tu cuenta para competir y ver tu posición.</div>`;return}
+  if(team){me.innerHTML='';return}
+  const r=await rpc('get_my_inf_rank',{p_mode:LBV.mode,p_season:LBV.season,p_country:LBV.country||null});if(!$('lbme'))return;
+  me.innerHTML=`<div class="lbme">${!r?`Aún no tienes partidas del Infinito de ${MODES[LBV.mode]} en esta temporada.`:r.pos==null?`Has jugado ${r.games} partidas del Infinito de ${MODES[LBV.mode]}, pero ninguna ha superado una oleada todavía.`
+    :`Tu posición: <b>${r.pos}º</b> · ${fmtN(r.score)} puntos · oleada ${r.wave} · ${fmt(r.time)} · ${divTag(r.division)} · ${r.completed}/${r.games} partidas`}</div>`}
+// Récords del Infinito de un perfil (el propio o el de otro jugador), tal y como los guarda el servidor.
+function infProfileHtml(inf){const ms=Object.keys(MODES).filter(m=>inf&&inf[m]);if(!ms.length)return '<h3>Modo Infinito</h3><div class="rows"><div><span>Récords</span><b>Sin partidas clasificadas del Infinito</b></div></div>';
+  return '<h3>Modo Infinito</h3><div class="rows">'+ms.map(m=>{const x=inf[m],s=x.season,e=x.ever,t=x.team;
+    return `<div><span>${MODES[m]} · temporada</span><b>${s?`oleada ${s.wave} · ${fmtN(s.score)} pts${s.pos?' · '+s.pos+'º':''} · ${s.division} · ${s.completed}/${s.games} partidas`:'Sin partidas esta temporada'}</b></div>`
+      +(s?`<div><span>${MODES[m]} · totales</span><b>${fmtN(s.total_waves)} oleadas · ${fmtN(s.total_kills)} ☠ · ${s.total_bosses} jefes</b></div>`:'')
+      +(e?`<div><span>${MODES[m]} · mejor de siempre</span><b>oleada ${e.wave} · ${fmtN(e.score)} pts · ${e.games} partida${e.games===1?'':'s'}</b></div>`:'')
+      +(t?`<div><span>${MODES[m]} · mejor equipo</span><b>${esc(t.members||'')} · oleada ${t.wave} · ${fmtN(t.score)} pts</b></div>`:'')}).join('')+'</div>'}
+async function lbInfMine(){scr(`<div class="box wide"><h1>Mis récords del Infinito</h1><div id="acm"></div><div id="lbl"><p>Cargando…</p></div><button class="opt" id="bk">${IC('back')}<div><b>Volver</b></div></button></div>`);$('bk').onclick=acProfile;
+  const loc=SAVE.inf&&SAVE.inf.best;
+  try{const p=await rpc('get_profile',{p_username:ME.username}),el=$('lbl');if(!el)return;
+    el.innerHTML=infProfileHtml(p&&p.inf)+(loc?`<h3>En este dispositivo</h3><div class="rows"><div><span>Mejor partida (también sin cuenta)</span><b>oleada ${loc.w} · ${fmtN(loc.sc)} pts · ${fmt(loc.t)} · ${fmtN(loc.k)} ☠ · ${loc.b} jefes</b></div><div><span>Partidas</span><b>${SAVE.inf.runs}</b></div></div>`:'')
+      +`<button class="opt" id="lbih">${IC('chart')}<div><b>Mi historial</b><span>Normal e Infinito</span></div></button>`;$('lbih').onclick=()=>lbHistory(lbInfMine)}catch(e){acMsg(acErr(e),true)}}
+{const _ap=acProfile;acProfile=async function(){const r=await _ap.apply(this,arguments);const a=$('achi');if(a&&!$('acinf')){const x=document.createElement('button');x.className='opt';x.id='acinf';
+  x.innerHTML=IC('trophy')+'<div><b>Mis récords del Infinito</b><span>Mejor oleada y puntuación por modo, y tus equipos</span></div>';a.after(x);x.onclick=lbInfMine}return r}}
+/* ===== Apoyar al creador: donaciones voluntarias con Stripe (solo en la versión web) =====
+ El pago se hace en la página oficial de Stripe; este código nunca ve la tarjeta ni ninguna clave
+ secreta. Una donación solo se muestra como recibida cuando el servidor dice que Stripe la ha
+ confirmado con su aviso firmado; volver a esta página no basta. En la app del móvil no aparece:
+ Apple y Google exigen sus propios pagos dentro de las apps. */
+const DON={amt:500,ret:null,poll:0};
+const donOn=()=>sbOn()&&!isNative();
+const eur=c=>(c/100).toLocaleString('es-ES',{style:'currency',currency:'EUR',minimumFractionDigits:c%100?2:0});
+{const q=new URLSearchParams(location.search),id=q.get('donacion'),r=q.get('resultado');
+  if(id&&/^[0-9a-f-]{36}$/.test(id)&&['ok','cancelada'].includes(r)){DON.ret={id,r};q.delete('donacion');q.delete('resultado');
+    try{history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:''))}catch(e){}}}
+const DERR={DONACIONES_NO_CONFIGURADAS:'Las donaciones todavía no están activadas en el servidor del juego. No se ha cobrado nada.',
+  CANTIDAD_NO_VALIDA:'La cantidad debe estar entre 1 € y 500 €.',DIRECCION_NO_PERMITIDA:'Esta copia del juego no está autorizada para recibir donaciones. No se ha cobrado nada.',
+  STRIPE_NO_DISPONIBLE:'No se ha podido abrir la página de pago de Stripe. Inténtalo más tarde; no se ha cobrado nada.',DEMASIADAS_PETICIONES:ERRS.DEMASIADAS_PETICIONES};
+Object.assign(ERRS,DERR);
+function donScreen(){if(!donOn())return donOff();
+  scr(`<div class="box"><h1>Apoyar al creador</h1>
+  <p>¡Gracias por jugar a Bosque de Vapor! Si te gusta y quieres ayudar a que siga creciendo, puedes hacer una donación.</p>
+  <div class="note">Es totalmente <b>voluntaria</b>: no desbloquea nada ni da ventajas en el juego, que sigue siendo igual para todos.</div>
+  <div class="rbtn" id="donam">${[200,500,1000,2000].map(c=>`<button class="opt" data-c="${c}" aria-pressed="${DON.amt===c}"><b>${eur(c)}</b></button>`).join('')}</div>
+  <label class="acl" for="donx">Otra cantidad (de 1 € a 500 €)</label><input class="acf" id="donx" inputmode="decimal" maxlength="7" placeholder="Por ejemplo 3,50" data-go="dongo">
+  <div id="acm"></div>
+  <button class="opt big" id="dongo">${IC('heart')}<div><b>Continuar al pago</b><span id="dons">${eur(DON.amt)} · pago seguro en la página de Stripe</span></div></button>
+  <button class="opt" id="bk">${IC('back')}<div><b>Volver sin donar</b></div></button>
+  <p class="acsm">Pagas en la web de Stripe: el juego no ve ni guarda los datos de tu tarjeta.${SESS?' La donación quedará asociada a tu cuenta.':''}</p></div>`);
+  acKeys();$('bk').onclick=menu;
+  const pick=c=>{DON.amt=c;ov.querySelectorAll('#donam [data-c]').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.c===c)));$('dons').textContent=eur(c)+' · pago seguro en la página de Stripe'};
+  ov.querySelectorAll('#donam [data-c]').forEach(b=>b.onclick=()=>{$('donx').value='';acMsg('');pick(+b.dataset.c)});
+  $('donx').oninput=()=>{const v=$('donx').value.trim().replace(',','.');if(!v)return pick(DON.amt);const n=Math.round(parseFloat(v)*100);
+    if(!/^\d{1,3}(\.\d{1,2})?$/.test(v)||!(n>=100&&n<=50000))return acMsg(DERR.CANTIDAD_NO_VALIDA,true);acMsg('');pick(n)};
+  $('dongo').onclick=()=>acBusy('dongo',async()=>{const v=$('donx').value.trim();if(v&&!(/^\d{1,3}([.,]\d{1,2})?$/.test(v)&&DON.amt===Math.round(parseFloat(v.replace(',','.'))*100)))throw new Error('CANTIDAD_NO_VALIDA');
+    const r=await donCall('crear-donacion',{amount_cents:DON.amt,return_url:location.origin+location.pathname+location.search});
+    try{localStorage.setItem('bdv_don',JSON.stringify({id:r.id,c:DON.amt,t:Date.now()}))}catch(e){}
+    acMsg('Abriendo la página de pago de Stripe…');location.assign(r.url)})}
+async function donCall(fn,body){let r;
+  try{r=await fetch(`${SB.url}/functions/v1/${fn}`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB.key,Authorization:'Bearer '+(SESS&&SESS.access_token||SB.key)},body:JSON.stringify(body)})}
+  catch(e){throw new Error('Failed to fetch')}
+  const j=await r.json().catch(()=>null);
+  if(!r.ok||!j||!j.url){const k=j&&j.error;throw new Error(DERR[k]?k:r.status===404?'DONACIONES_NO_CONFIGURADAS':'STRIPE_NO_DISPONIBLE')}
+  return j}
+function donOff(){scr(`<div class="box"><h1>Apoyar al creador</h1><div class="note warn">${isNative()?'Las donaciones solo se pueden hacer desde la versión web del juego.':'Las donaciones todavía no están activadas en esta versión del juego: falta conectar el servidor.'}</div>${BK}</div>`);$('bk').onclick=menu}
+// Vuelta desde Stripe: se pregunta al servidor cómo está la donación.
+async function donReturn(){const {id,r}=DON.ret;DON.ret=null;let c=0;try{const s=JSON.parse(localStorage.getItem('bdv_don')||'{}');if(s.id===id)c=s.c}catch(e){}
+  scr(`<div class="box"><h1>Apoyar al creador</h1><div id="acm"></div><div id="donst"><p>${r==='ok'?'Comprobando el pago con Stripe…':'Volviendo…'}</p></div><div id="donbt"></div>${BK}</div>`);$('bk').onclick=()=>{clearTimeout(DON.poll);menu()};
+  const show=(h,again)=>{const el=$('donst');if(!el)return;el.innerHTML=h;$('donbt').innerHTML=again?`<button class="opt" id="donre">${IC('check')}<div><b>Comprobar otra vez</b></div></button>`:'';
+    if(again)$('donre').onclick=()=>{DON.ret={id,r:'ok'};donReturn()}};
+  const done=d=>{try{localStorage.removeItem('bdv_don')}catch(e){}};
+  try{if(r==='cancelada'){const d=await rpc('cancel_donation',{p_id:id});
+      if(d&&d.status==='paid'){done();return show(`<div class="note">¡Gracias! Stripe ha confirmado tu donación de <b>${eur(d.amount_cents)}</b>.</div>`)}
+      done();return show(`<div class="note">Has vuelto sin donar. No se ha cobrado nada.</div><p>¡Gracias igualmente por jugar!</p>`)}
+    const t0=Date.now();
+    const tick=async()=>{let d;try{d=await rpc('get_donation',{p_id:id})}catch(e){if(!$('donst'))return;return show(`<div class="note warn">${acErr(e)}</div>`,1)}
+      if(!$('donst'))return;
+      if(!d){done();return show('<div class="note warn">No se encuentra esa donación.</div>')}
+      if(d.status==='paid'){done();return show(`<div class="note"><b>¡Muchísimas gracias!</b> Stripe ha confirmado tu donación de <b>${eur(d.amount_cents)}</b>. Tu apoyo ayuda a que Bosque de Vapor siga creciendo.</div>`)}
+      if(d.status==='failed'){done();return show('<div class="note warn">El pago no se ha completado, así que no se ha cobrado nada. Puedes intentarlo otra vez si quieres.</div>')}
+      if(d.status==='expired'||d.status==='canceled'){done();return show('<div class="note warn">La página de pago se cerró sin completar el pago. No se ha cobrado nada.</div>')}
+      if(Date.now()-t0<40000){show(`<p>Comprobando el pago con Stripe…</p><p class="acsm">Esperando la confirmación de ${eur(d.amount_cents||c)}. No cierres esta pantalla.</p>`);DON.poll=setTimeout(tick,2000);return}
+      show(`<div class="note">Stripe todavía no ha confirmado el pago de ${eur(d.amount_cents||c)}. Si has pagado con un método lento (por ejemplo una transferencia) puede tardar: <b>no hace falta volver a pagar</b>.</div>`,1)};
+    await tick()}catch(e){show(`<div class="note warn">${acErr(e)}</div>`,1)}}
+{const _mn=menu;let first=1;menu=function(){const r=_mn.apply(this,arguments);
+  if(first){first=0;if(DON.ret&&sbOn()){setTimeout(donReturn,0);return r}}
+  if(!run&&!isNative()&&!$('mdon')){const a=$('mlb')||$('mnet')||$('mplay');if(a){const x=document.createElement('button');x.className='opt';x.id='mdon';
+    x.innerHTML=IC('heart')+'<div><b>Apoyar al creador</b><span>Donación voluntaria</span></div>';(a.parentNode.querySelector('.opt:last-of-type')||a).after(x);x.onclick=donScreen}}return r}}
 
 applyOpts();menu();requestAnimationFrame(loop);
 $('ult').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();useUlt()});
