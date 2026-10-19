@@ -1,0 +1,56 @@
+// Partida clasificada: en solitario y de grupo (dúo) empezada desde el grupo, con los
+// resultados enviados al servidor y los puntos calculados allí.
+const {chromium}=require(process.env.PLAYWRIGHT||'playwright');
+const {execSync}=require('child_process');
+const SBD=require('path').join(__dirname,'..','servidor-local');
+const key=k=>execSync(`cd ${SBD} && . ./gotrue.env.sh && node gateway.js ${k}`,{shell:'/bin/bash'}).toString().trim();
+const ANON=key('anon'),SERVICE=key('service'),API='http://127.0.0.1:54321';
+const GAME=process.env.GAME_URL||'http://127.0.0.1:8766/www/index.html';
+const U=`${GAME}?sburl=${encodeURIComponent(API)}&sbkey=${ANON}&peerhost=127.0.0.1&peerport=9000`;
+const DB=process.env.DB||'sbe2e';
+const sql=q=>execSync(`psql -h /tmp/pg -p 5433 -U postgres -d ${DB} -tAc "${q.replace(/"/g,'\\"')}"`).toString().trim();
+let ok=0,bad=0;const check=(n,c,x)=>{if(c){ok++;console.log('  ok   ',n)}else{bad++;console.log('  FALLO',n,x===undefined?'':JSON.stringify(x).slice(0,300))}};
+async function mkUser(email,name){const r=await fetch(API+'/auth/v1/admin/users',{method:'POST',headers:{apikey:ANON,Authorization:'Bearer '+SERVICE,'Content-Type':'application/json'},
+  body:JSON.stringify({email,password:'Clave12345',email_confirm:true})});const j=await r.json();sql(`update profiles set username='${name}' where id='${j.id}'`);return j.id}
+(async()=>{sql('delete from auth.users');sql('delete from matches');const T=Date.now();const ida=await mkUser(`a${T}@p.local`,'Ana'),idb=await mkUser(`b${T}@p.local`,'Beto');
+sql(`insert into friendships(requester,addressee,status) values ('${ida}','${idb}','accepted')`);
+const b=await chromium.launch();const errs=[];
+const txt=p=>p.evaluate(()=>ov.style.display==='none'?'':ov.innerText.replace(/\s+/g,' '));
+const wait=async(p,f,ms=10000)=>{const t=Date.now();while(Date.now()-t<ms){if(await f())return true;await p.waitForTimeout(250)}return false};
+const login=async(k)=>{const c=await b.newContext({viewport:{width:844,height:390}});const p=await c.newPage();
+  p.on('pageerror',e=>{errs.push(k+' '+e.message);console.log(k,'ERR',e.message,(e.stack||'').split('\n')[1])});
+  await p.goto(U);await p.waitForTimeout(600);await p.click('#macc');await p.fill('#ace',`${k}${T}@p.local`);await p.fill('#acpw','Clave12345');await p.click('#acgo');
+  await wait(p,async()=>/Mi cuenta/.test(await txt(p)));await p.evaluate(()=>menu());return p};
+const A=await login('a'),B=await login('b');
+console.log('Partida en solitario clasificada');
+await A.click('#mplay');check('la partida se registra en el servidor',await wait(A,async()=>await A.evaluate(()=>!!RK.mid)),await A.evaluate(()=>RK.info));
+sql(`update matches set started_at = now() - interval '3 minutes' where status='active'`);
+await A.evaluate(()=>{S.t=150;S.kills=40;P.hp=0});
+check('al terminar se envía y el servidor da los puntos',await wait(A,async()=>/Partida clasificada: \+25 puntos/.test(await txt(A))),await txt(A));
+check('queda en el servidor',sql(`select score from match_results`)==='25');
+console.log('Trampa desde el navegador');
+await A.evaluate(()=>menu());await A.click('#mplay');await wait(A,async()=>await A.evaluate(()=>!!RK.mid));
+await A.evaluate(()=>{S.t=1100;S.kills=99;P.hp=0});
+check('aguantar 18 min en segundos: el servidor lo rechaza',await wait(A,async()=>/rechazado/.test(await txt(A))),await txt(A));
+check('...y no da puntos',sql(`select count(*) from match_results`)==='1');
+console.log('Partida de grupo (dúo)');
+await A.evaluate(()=>menu());await A.click('#mfr');await wait(A,async()=>/Crea un grupo/.test(await txt(A)));await A.click('#som_duo');
+await wait(A,async()=>/Código del grupo/.test(await txt(A)));await A.click('#soinv');await wait(A,async()=>/Beto/.test(await txt(A)));await A.click('[data-act="inv|Beto"]');
+await B.evaluate(()=>menu());check('Beto recibe la invitación',await wait(B,async()=>!!(await B.$('#soia')),15000));await B.click('#soia');
+await wait(B,async()=>/Código del grupo/.test(await txt(B)));await B.click('#sordy');
+await A.click('#bk');check('el líder puede empezar cuando todos están listos',await wait(A,async()=>await A.evaluate(()=>{const b=$('sogo');return b&&!b.disabled}),8000),await txt(A));
+await A.click('#sogo');
+check('Beto se conecta solo y empieza la partida para los dos',await wait(B,async()=>await B.evaluate(()=>run&&NET.on&&!NET.host),25000),await txt(B));
+check('el anfitrión tiene a los dos',await wait(A,async()=>await A.evaluate(()=>run&&NET.pl.length===2)));
+const mid=await A.evaluate(()=>RK.mid);check('los dos tienen la misma partida del servidor',mid&&mid===await B.evaluate(()=>RK.mid),[mid]);
+check('en el servidor la partida es de dúo con los dos',sql(`select mode||count(*) from matches m join match_players mp on mp.match_id=m.id where m.id='${mid}' group by mode`)==='duo2');
+await A.waitForTimeout(2500);
+sql(`update matches set started_at = now() - interval '4 minutes' where id='${mid}'`);
+await A.evaluate(()=>{S.t=200;S.kills=120;for(const q of NET.pl)q.hp=0});
+check('Beto ve el final',await wait(B,async()=>/devorado/.test(await txt(B)),10000),await txt(B));
+check('los dos envían su resultado y el servidor da los puntos',await wait(A,async()=>/Partida clasificada/.test(await txt(A)),15000)&&await wait(B,async()=>/Partida clasificada/.test(await txt(B)),15000),[await txt(A),await txt(B)]);
+check('resultado del grupo en el servidor',sql(`select status||':'||(select count(*) from match_reports where match_id='${mid}') from matches where id='${mid}'`)==='finished:2');
+check('clasificación de equipos de dúos',sql(`select games from team_ratings where mode='duo'`)==='1');
+check('Beto puede volver al grupo',(await B.$('#nlv'))&&/Volver al grupo/.test(await txt(B)));
+check('sin errores de JavaScript',errs.length===0,errs);
+console.log(`\n${ok} bien, ${bad} fallos`);await b.close();process.exit(bad?1:0)})();

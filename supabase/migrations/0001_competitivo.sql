@@ -344,6 +344,18 @@ begin
   update match_players set active = false where match_id = p_match;
   if n_reports < need or n_reports = 0 then
     update matches set status = 'abandoned', ended_at = now() where id = p_match;
+    -- Una partida abandonada cuenta como jugada (sin puntos ni victoria), para que
+    -- cerrar el juego cuando va mal no mejore el porcentaje de victorias.
+    if m.difficulty <> 'a' then
+      insert into ratings(season_id, user_id, mode, games)
+        select m.season_id, mp.user_id, m.mode, 1 from match_players mp where mp.match_id = p_match
+      on conflict (season_id, user_id, mode) do update set games = ratings.games + 1, updated_at = now();
+      if m.mode <> 'solo' then
+        select array_agg(user_id order by user_id) into mem from match_players where match_id = p_match;
+        insert into team_ratings(season_id, mode, team_key, members, games) values (m.season_id, m.mode, array_to_string(mem, ','), mem, 1)
+        on conflict (season_id, mode, team_key) do update set games = team_ratings.games + 1, updated_at = now();
+      end if;
+    end if;
     return;
   end if;
   -- Si los jugadores no coinciden, se toma el valor más bajo y se marca.
@@ -767,6 +779,11 @@ begin
     md := 'solo';
   end if;
   mem := array(select user_id from party_members where party_id = pt.id union select u);
+  -- Una partida anterior de estos mismos jugadores que se quedó abierta (se cerró el juego,
+  -- se fue internet...) se da por abandonada: nadie puede estar en dos a la vez.
+  perform finalize_match(x.match_id, true) from (select distinct mp.match_id from match_players mp
+    where mp.active and mp.user_id = any(mem)
+      and not exists(select 1 from match_players o where o.match_id = mp.match_id and o.active and not (o.user_id = any(mem)))) x;
   if exists(select 1 from match_players where active and user_id = any(mem)) then
     raise exception 'YA_EN_PARTIDA';
   end if;
@@ -814,6 +831,17 @@ begin
   perform finalize_match(p_match, false);
   select * into res from match_results where match_id = p_match;
   return jsonb_build_object('status', (select status from matches where id = p_match), 'score', res.score, 'flagged', res.flagged);
+end $$;
+
+-- Estado y resultado de una partida mía.
+create or replace function public.get_match_result(p_match uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user();
+begin
+  if not exists(select 1 from match_players where match_id = p_match and user_id = u) then raise exception 'PARTIDA_NO_VALIDA'; end if;
+  return (select jsonb_build_object('status', m.status, 'mode', m.mode, 'score', r.score, 'flagged', r.flagged, 'won', r.won,
+    'reports', (select count(*) from match_reports where match_id = m.id), 'players', (select count(*) from match_players where match_id = m.id))
+    from matches m left join match_results r on r.match_id = m.id where m.id = p_match);
 end $$;
 
 -- Abandonar: cuenta como informe con lo jugado hasta ahora.
@@ -904,6 +932,16 @@ begin
     'puntos', (select coalesce(jsonb_agg(to_jsonb(r) - 'user_id'), '[]'::jsonb) from ratings r where r.user_id = u));
 end $$;
 
+-- Si se borra un perfil (por el propio jugador o desde el panel), sus equipos salen de la clasificación.
+create or replace function public.drop_teams_of() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  delete from team_ratings where old.id = any(members);
+  return old;
+end $$;
+drop trigger if exists on_profile_deleted on public.profiles;
+create trigger on_profile_deleted after delete on public.profiles for each row execute function public.drop_teams_of();
+
 create or replace function public.delete_my_account() returns void
 language plpgsql security definer set search_path = public, auth, pg_temp as $$
 declare u uuid := require_user();
@@ -986,7 +1024,7 @@ grant execute on function
   public.create_party(text), public.get_party(), public.set_party_mode(text), public.set_ready(boolean),
   public.invite_to_party(text), public.list_invites(), public.set_party_room(text), public.list_blocked(), public.join_party(text), public.leave_party(),
   public.kick_member(text), public.start_match(text,text,jsonb), public.submit_result(uuid,int,int,boolean,int,boolean),
-  public.abandon_match(uuid,int,int,int), public.get_my_rank(text,int,text), public.claim_season_rewards(),
+  public.abandon_match(uuid,int,int,int), public.get_match_result(uuid), public.get_my_rank(text,int,text), public.claim_season_rewards(),
   public.export_my_data(), public.delete_my_account()
   to authenticated;
 grant execute on function public.get_leaderboard(text,int,text,text,int,int), public.list_seasons(),

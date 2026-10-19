@@ -137,7 +137,12 @@ print("Partida en solitario")
 r = rpc(A, "start_match", "s", "forest")
 m1 = r["match"]
 check("el servidor crea la partida y da la semilla", r["mode"] == "solo" and isinstance(r["seed"], int))
-check("no se puede estar en dos partidas a la vez", "YA_EN_PARTIDA" in (err(A, "select start_match('s','forest')") or ""))
+r0 = rpc(A, "start_match", "s", "forest")
+check("empezar otra deja la anterior como abandonada (nunca dos a la vez)",
+      admin("select status from matches where id = %s", m1)[0][0] == "abandoned" and
+      admin("select count(*) from match_players where user_id = %s and active", A)[0][0] == 1)
+check("...y la abandonada cuenta como partida jugada sin puntos", admin("select games, points from ratings where user_id = %s and mode = 'solo'", A)[0] == (1, 0))
+m1 = r0["match"]
 check("dificultad inventada rechazada", "DIFICULTAD_NO_VALIDA" in (err(B, "select start_match('z','forest')") or ""))
 check("mapa inventado rechazado", "MAPA_NO_VALIDO" in (err(B, "select start_match('s','luna')") or ""))
 n0 = events("resultado_imposible")
@@ -159,7 +164,7 @@ lb = rpc(None, "get_leaderboard", "solo")
 check("aparece en la clasificación mundial", len(lb) == 1 and lb[0]["name"] == "Ana_01" and lb[0]["points"] == 98, lb)
 check("con país si lo ha elegido mostrar", lb[0]["country"] == "ES")
 mr = rpc(A, "get_my_rank", "solo")
-check("mi posición", mr["pos"] == 1 and mr["games"] == 1 and mr["winrate"] == 0, mr)
+check("mi posición (2 partidas: la abandonada y esta)", mr["pos"] == 1 and mr["games"] == 2 and mr["winrate"] == 0, mr)
 check("filtro por país", len(rpc(None, "get_leaderboard", "solo", None, "FR")) == 0 and
       len(rpc(None, "get_leaderboard", "solo", None, "es")) == 1)
 check("la experiencia la da el servidor", rpc(A, "get_me")["xp"] == 98)
