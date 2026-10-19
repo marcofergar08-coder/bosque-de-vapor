@@ -6,7 +6,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>es.bosquedevapor.auth</string>
+			<string>com.marcofernandez.bosquedevapor.auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>bosquedevapor</string>

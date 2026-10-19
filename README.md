@@ -27,7 +27,19 @@ Este proyecto convierte el juego (`www/index.html`) en una app de iPhone con Cap
 
 ## Actualizar el juego
 
-Cuando haya una versión nueva del juego, reemplaza `www/index.html` por el nuevo archivo y vuelve a compilar.
+El juego se construye a partir de `juego/base.html` (la versión 8) y las capas de `juego/capas/`
+(online, cuentas, amigos y grupos, partidas clasificadas y clasificación). Después de cambiar algo:
+
+```
+npm install
+python3 juego/construir.py   # crea www/index.html
+npx cap sync                 # lo copia a los proyectos de iPhone y Android
+```
+
+## Servidor (cuentas, amigos, clasificación)
+
+Ver [SERVIDOR.md](SERVIDOR.md). Sin servidor configurado el juego funciona igual que antes:
+se juega solo o con amigos por código de sala, y el progreso se guarda en el dispositivo.
 
 ## Notas
 
