@@ -17,6 +17,7 @@ function verify(t) {
 }
 const ANON = sign({ role: 'anon', iss: 'supabase', iat: 1700000000, exp: 2000000000 });
 if (process.argv[2] === 'anon') { console.log(ANON); process.exit(0); }
+if (process.argv[2] === 'service') { console.log(sign({ role: 'service_role', iss: 'supabase', iat: 1700000000, exp: 2000000000 })); process.exit(0); }
 const log = [];
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

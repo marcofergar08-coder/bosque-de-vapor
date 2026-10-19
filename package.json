@@ -14,6 +14,7 @@
   "devDependencies": {
     "@capacitor/cli": "8.5.3",
     "@supabase/supabase-js": "^2.117.2",
-    "peerjs": "^1.5.5"
+    "peerjs": "^1.5.5",
+    "pg": "^8.13.1"
   }
 }

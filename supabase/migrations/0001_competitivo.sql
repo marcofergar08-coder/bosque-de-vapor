@@ -155,6 +155,8 @@ create table if not exists public.parties(
   leader uuid not null references public.profiles(id) on delete cascade,
   mode text not null default 'duo' check (mode in ('solo','duo','trio','squad')),
   code text not null unique default upper(substr(md5(gen_random_uuid()::text),1,6)),
+  room text check (room is null or room ~ '^bosquevapor8-[A-Z0-9]{4,8}$'),   -- sala de juego directa del líder
+  match_id uuid,
   created_at timestamptz not null default now()
 );
 create table if not exists public.party_members(
@@ -631,6 +633,7 @@ begin
   select pa.* into pt from parties pa join party_members pm on pm.party_id = pa.id where pm.user_id = u;
   if not found then return null; end if;
   return jsonb_build_object('id', pt.id, 'code', pt.code, 'mode', pt.mode, 'size', mode_size(pt.mode),
+    'room', pt.room, 'match', case when exists(select 1 from matches m where m.id = pt.match_id and m.status = 'active') then pt.match_id end,
     'leader', (select username from profiles where id = pt.leader), 'me_leader', pt.leader = u,
     'members', (select jsonb_agg(jsonb_build_object('username', p.username, 'avatar', p.avatar, 'level', p.level,
         'ready', pm.ready, 'leader', p.id = pt.leader,
@@ -672,6 +675,24 @@ begin
   insert into party_invites(party_id, from_user, to_user) values (pid, u, t) on conflict do nothing;
 end $$;
 
+-- El líder anuncia la sala de juego directa para que el resto se conecte.
+create or replace function public.set_party_room(p_room text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user();
+begin
+  if p_room is not null and p_room !~ '^bosquevapor8-[A-Z0-9]{4,8}$' then raise exception 'SALA_NO_VALIDA'; end if;
+  update parties set room = p_room where id = my_party() and leader = u;
+  if not found then raise exception 'SOLO_EL_LIDER'; end if;
+  return get_party();
+end $$;
+
+create or replace function public.list_blocked() returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u uuid := require_user();
+begin
+  return coalesce((select jsonb_agg(p.username order by p.username) from blocks b join profiles p on p.id = b.blocked where b.blocker = u), '[]'::jsonb);
+end $$;
+
 create or replace function public.list_invites() returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare u uuid := require_user();
@@ -708,7 +729,7 @@ begin
     delete from parties where id = pid;
   elsif (select leader from parties where id = pid) = u then
     select user_id into nl from party_members where party_id = pid order by joined_at limit 1;
-    update parties set leader = nl where id = pid;
+    update parties set leader = nl, room = null where id = pid;
   end if;
 end $$;
 
@@ -753,7 +774,10 @@ begin
   insert into match_players(match_id, user_id, hero)
     select mid, x, coalesce(nullif(p_heroes->>(select username::text from profiles where id = x), ''), 'willie')
     from unnest(mem) x;
-  if pt.id is not null then update party_members set ready = false where party_id = pt.id; end if;
+  if pt.id is not null then
+    update party_members set ready = false where party_id = pt.id;
+    update parties set match_id = mid where id = pt.id;
+  end if;
   perform log_event(u, 'partida_creada', jsonb_build_object('match', mid, 'modo', md));
   return jsonb_build_object('match', mid, 'mode', md, 'seed', (select seed from matches where id = mid), 'server_time', now());
 end $$;
@@ -960,7 +984,7 @@ grant execute on function
   public.send_friend_request(text), public.respond_friend_request(text,boolean), public.remove_friend(text),
   public.list_friends(), public.block_user(text), public.unblock_user(text), public.report_user(text,text,text),
   public.create_party(text), public.get_party(), public.set_party_mode(text), public.set_ready(boolean),
-  public.invite_to_party(text), public.list_invites(), public.join_party(text), public.leave_party(),
+  public.invite_to_party(text), public.list_invites(), public.set_party_room(text), public.list_blocked(), public.join_party(text), public.leave_party(),
   public.kick_member(text), public.start_match(text,text,jsonb), public.submit_result(uuid,int,int,boolean,int,boolean),
   public.abandon_match(uuid,int,int,int), public.get_my_rank(text,int,text), public.claim_season_rewards(),
   public.export_my_data(), public.delete_my_account()
