@@ -11,7 +11,7 @@ const mk=async(n)=>{const c=await b.newContext({viewport:{width:844,height:390}}
 const txt=p=>p.evaluate(()=>ov.style.display==='none'?'':ov.innerText.replace(/\s+/g,' '));
 const wait=async(p,f,ms=10000)=>{const t=Date.now();while(Date.now()-t<ms){if(await f())return true;await p.waitForTimeout(200)}return false};
 const st=p=>p.evaluate(()=>({run,on:NET.on,host:NET.host,you:NET.you,n:NET.pl.length,me:P&&[Math.round(P.x),Math.round(P.y)],t:S&&S.t,off:NET.pl.map(q=>q.off?1:0)}));
-const cards=async ps=>{for(const p of ps){const o=await txt(p);if(/Nivel|Cofre/.test(o)){const bt=await p.$('#ov .opt');if(bt)await bt.click().catch(()=>{})}}};
+const cards=async ps=>{for(const p of ps){const o=await txt(p);if(await p.evaluate(()=>run&&!S.ended)&&/Nivel|Cofre/.test(o)){const bt=await p.$('#ov .opt');if(bt)await bt.click().catch(()=>{})}}};
 const H=await mk('H');await H.click('#mnet');await H.click('#nmk');await wait(H,async()=>/Sala [A-Z]{4}/.test(await txt(H)));
 const code=(await txt(H)).match(/Sala ([A-Z]{4})/)[1];
 const G=[];for(const n of ['G1','G2','G3']){const g=await mk(n);await g.click('#mnet');await g.click('#njn');await g.fill('#ncd',code);await g.click('#ngo');G.push(g)}
@@ -51,8 +51,9 @@ check('se marca como desconectado',await wait(H,async()=>(await st(H)).off[1]===
 await H.evaluate(()=>{for(const g of NET.gs)if(!g.c)g.off=0.1});
 check('pasado el tiempo de espera sale de la partida',await wait(H,async()=>(await st(H)).n===2),await st(H));
 console.log('Fin de partida');
-await H.evaluate(()=>{for(const q of NET.pl){q.hp=0}});
-check('si caen todos se acaba para todos',await wait(G[1],async()=>/devorado/.test(await txt(G[1])),8000),await txt(G[1]));
-check('el anfitrión ve el final',await wait(H,async()=>!(await st(H)).run));
+// si justo sale una mejora la partida está en pausa: se elige como haría un jugador
+await cards([H,G[1]]);await H.evaluate(()=>{for(const q of NET.pl){q.hp=0}});
+check('si caen todos se acaba para todos',await wait(G[1],async()=>{await cards([H]);return /devorado/.test(await txt(G[1]))},8000),await txt(G[1]));
+check('el anfitrión ve el final',await wait(H,async()=>!(await st(H)).run),await H.evaluate(()=>({run,paused,ov:ov.innerText.slice(0,60),pl:NET.pl.map(q=>[q.hp,q.dn,q.off,q.max])})));
 check('sin errores de JavaScript',errs.length===0,errs);
 console.log(`\n${ok} bien, ${bad} fallos`);await b.close();process.exit(bad?1:0)})();

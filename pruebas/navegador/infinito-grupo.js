@@ -11,7 +11,7 @@ const mk=async(n)=>{const c=await b.newContext({viewport:{width:844,height:390}}
   p.on('pageerror',e=>{errs.push(n+' '+e.message);console.log(n,'ERR',e.message,(e.stack||'').split('\n')[1])});await p.goto(U);await p.waitForTimeout(700);return p};
 const txt=p=>p.evaluate(()=>ov.style.display==='none'?'':ov.innerText.replace(/\s+/g,' '));
 const wait=async(p,f,ms=10000)=>{const t=Date.now();while(Date.now()-t<ms){if(await f())return true;await p.waitForTimeout(200)}return false};
-const cards=async ps=>{for(const p of ps){const o=await txt(p);if(/Nivel|Cofre|Recompensa/.test(o)){const bt=await p.$('#ov .opt');if(bt)await bt.click().catch(()=>{})}}};
+const cards=async ps=>{for(const p of ps){const o=await txt(p);if(await p.evaluate(()=>run&&!S.ended)&&/Nivel|Cofre|Recompensa/.test(o)){const bt=await p.$('#ov .opt');if(bt)await bt.click().catch(()=>{})}}};
 const H=await mk('H');await H.click('#mnet');await H.click('#nmk');await wait(H,async()=>/Sala [A-Z]{4}/.test(await txt(H)));
 const code=(await txt(H)).match(/Sala ([A-Z]{4})/)[1];
 const G=[];for(const n of ['G1','G2','G3']){const g=await mk(n);await g.click('#mnet');await g.click('#njn');await g.fill('#ncd',code);await g.click('#ngo');G.push(g)}
