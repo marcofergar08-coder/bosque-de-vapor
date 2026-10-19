@@ -192,11 +192,15 @@ check("ver el grupo de otro no es posible", as_user(C, "select count(*) from par
 rpc(B, "join_party", p["code"])
 check("Beto entra", len(rpc(A, "get_party")["members"]) == 2)
 check("grupo lleno", "GRUPO_LLENO" in (err(C, f"select join_party('{p['code']}')") or ""))
-check("no empieza si alguien no está listo", "NO_TODOS_LISTOS" in (err(A, "select start_match('s','forest')") or ""))
+check("no empieza si alguien no está listo", "NO_TODOS_LISTOS" in (err(A, "select start_match('s','forest',p_party=>true)") or ""))
 rpc(B, "set_ready", True)
-check("solo el líder empieza", "SOLO_EL_LIDER" in (err(B, "select start_match('s','forest')") or ""))
+check("solo el líder empieza", "SOLO_EL_LIDER" in (err(B, "select start_match('s','forest',p_party=>true)") or ""))
 check("el grupo no puede pasar a solitario con 2 personas", "DEMASIADOS_EN_EL_GRUPO" in (err(A, "select set_party_mode('solo')") or ""))
-r = rpc(A, "start_match", "n", "ruins", json.dumps({"Ana_01": "willie", "Beto": "pooh"}))
+check("quien no está en un grupo no puede empezar una de grupo", "SIN_GRUPO" in (err(C, "select start_match('s','forest',p_party=>true)") or ""))
+r = rpc(B, "start_match", "s", "forest")
+check("estando en un grupo se puede jugar en solitario y cuenta como solitario", r["mode"] == "solo")
+admin("delete from matches where id = %s", r["match"])
+r = rpc(A, "start_match", "n", "ruins", json.dumps({"Ana_01": "willie", "Beto": "pooh"}), True)
 m2 = r["match"]
 check("partida de dúo creada", r["mode"] == "duo")
 check("los listos se reinician tras empezar", all(not x["ready"] or x["leader"] for x in rpc(A, "get_party")["members"]))
@@ -219,7 +223,7 @@ check("los jugadores solo ven sus partidas", as_user(C, "select count(*) from ma
 
 print("Informes que no coinciden")
 rpc(B, "set_ready", True)
-m3 = rpc(A, "start_match", "s", "forest")["match"]; backdate(m3, 21)
+m3 = rpc(A, "start_match", "s", "forest", "{}", True)["match"]; backdate(m3, 21)
 rpc(A, "submit_result", m3, 1200, 900, True, 30)
 r = rpc(B, "submit_result", m3, 400, 100, False, 10)
 check("se marca y se usa el valor más bajo", r["flagged"] and r["score"] == round(400 / 60 * 10), r)
@@ -227,7 +231,7 @@ check("queda registrado", events("informes_distintos") >= 1)
 
 print("Abandono y desconexión")
 rpc(B, "set_ready", True)
-m4 = rpc(A, "start_match", "s", "forest")["match"]; backdate(m4, 12)
+m4 = rpc(A, "start_match", "s", "forest", "{}", True)["match"]; backdate(m4, 12)
 before = as_user(B, "select public.get_my_rank('duo')")[0][0]
 r = rpc(B, "abandon_match", m4, 200, 50, 8)
 check("Beto abandona: la partida sigue para Ana", r["status"] == "active", r)
@@ -237,10 +241,10 @@ after = as_user(B, "select public.get_my_rank('duo')")[0][0]
 check("quien abandona suma partida sin puntos ni victoria",
       after["games"] == before["games"] + 1 and after["wins"] == before["wins"] and after["points"] == before["points"], (before, after))
 rpc(B, "set_ready", True)
-m5 = rpc(A, "start_match", "s", "forest")["match"]
+m5 = rpc(A, "start_match", "s", "forest", "{}", True)["match"]
 admin("update matches set started_at = now() - interval '50 minutes' where id = %s", m5)
 rpc(B, "set_ready", True)
-r = rpc(A, "start_match", "s", "forest")
+r = rpc(A, "start_match", "s", "forest", "{}", True)
 st = admin("select status from matches where id = %s", m5)[0][0]
 check("una partida colgada se cierra sola y deja empezar otra", st == "abandoned" and r["match"] != m5, st)
 admin("update matches set started_at = now() - interval '50 minutes' where id = %s", r["match"])

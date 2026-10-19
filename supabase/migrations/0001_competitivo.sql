@@ -847,7 +847,10 @@ end $$;
 -- Partidas
 -- El líder empieza la partida. El servidor comprueba el modo, que estén todos
 -- listos y que nadie esté ya en otra partida, y devuelve la semilla.
-create or replace function public.start_match(p_difficulty text, p_map text, p_heroes jsonb default '{}'::jsonb) returns jsonb
+-- p_party: la empieza el líder para todo el grupo. Si no, es una partida en solitario
+-- aunque el jugador esté en un grupo.
+drop function if exists public.start_match(text, text, jsonb);
+create or replace function public.start_match(p_difficulty text, p_map text, p_heroes jsonb default '{}'::jsonb, p_party boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare u uuid := require_user(); pt parties; n int; mid uuid; md text; sid int; mem uuid[];
 begin
@@ -856,8 +859,9 @@ begin
   if p_difficulty not in ('a','s','n','x') then raise exception 'DIFICULTAD_NO_VALIDA'; end if;
   if p_map is null or p_map not in ('forest','ruins','swamp') then raise exception 'MAPA_NO_VALIDO'; end if;
   sid := current_season();
-  select pa.* into pt from parties pa join party_members pm on pm.party_id = pa.id where pm.user_id = u;
-  if found then
+  if p_party then
+    select pa.* into pt from parties pa join party_members pm on pm.party_id = pa.id where pm.user_id = u;
+    if not found then raise exception 'SIN_GRUPO'; end if;
     if pt.leader <> u then raise exception 'SOLO_EL_LIDER'; end if;
     md := pt.mode;
     select count(*) into n from party_members where party_id = pt.id;
@@ -1115,7 +1119,7 @@ grant execute on function
   public.create_party(text), public.get_party(), public.set_party_mode(text), public.set_ready(boolean),
   public.invite_to_party(text), public.list_invites(), public.set_party_room(text), public.list_blocked(),
   public.queue_join(text,text), public.queue_status(), public.queue_leave(), public.join_party(text), public.leave_party(),
-  public.kick_member(text), public.start_match(text,text,jsonb), public.submit_result(uuid,int,int,boolean,int,boolean),
+  public.kick_member(text), public.start_match(text,text,jsonb,boolean), public.submit_result(uuid,int,int,boolean,int,boolean),
   public.abandon_match(uuid,int,int,int), public.get_match_result(uuid), public.get_my_rank(text,int,text), public.claim_season_rewards(),
   public.export_my_data(), public.delete_my_account()
   to authenticated;

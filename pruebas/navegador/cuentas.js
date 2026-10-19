@@ -5,7 +5,7 @@ const fs=require('fs'),{execSync}=require('child_process');
 const SBD=require('path').join(__dirname,'..','servidor-local');
 const MAIL=process.env.MAILDIR||SBD+'/mail';
 const ANON=execSync(`cd ${SBD} && . ./gotrue.env.sh && node gateway.js anon`,{shell:'/bin/bash'}).toString().trim();
-const GAME=process.env.GAME_URL||'http://127.0.0.1:8765/www/index.html';
+const GAME=process.env.GAME_URL||'http://127.0.0.1:8766/www/index.html';
 const U=`${GAME}?sburl=${encodeURIComponent('http://127.0.0.1:54321')}&sbkey=${ANON}`;
 const sql=q=>execSync(`psql -h /tmp/pg -p 5433 -U postgres -d sbe2e -tAc "${q.replace(/"/g,'\\"')}"`).toString().trim();
 let ok=0,bad=0;const check=(n,c,x)=>{if(c){ok++;console.log('  ok   ',n)}else{bad++;console.log('  FALLO',n,x===undefined?'':JSON.stringify(x))}};
@@ -24,7 +24,7 @@ const txt=p=>p.evaluate(()=>ov.innerText.replace(/\s+/g,' '));
 const wait=async(p,re,ms=6000)=>{const t=Date.now();while(Date.now()-t<ms){const s=await txt(p);if(re.test(s))return s;await p.waitForTimeout(150)}return await txt(p)};
 
 console.log('Sin servidor configurado');
-{const p=await mk('X',GAME);const req=[];p.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:8765'))req.push(r.url())});
+{const p=await mk('X',GAME+'?sburl=off');const req=[];p.on('request',r=>{if(!r.url().startsWith(new URL(GAME).origin))req.push(r.url())});
  check('el menú muestra el botón de cuenta',await p.$('#macc')!==null);await p.click('#macc');
  check('avisa de que las cuentas no están activadas',/no están activadas/.test(await txt(p)));await p.click('#bk');
  await p.click('#mplay');await p.waitForTimeout(1500);check('se puede jugar igual sin cuenta',await p.evaluate(()=>run===true));

@@ -49,7 +49,7 @@ window.ptStart=async function(p){if(!window.Peer)throw new Error('No se ha podid
     if(n===p.size-1)go()};
   const go=async()=>{if(RK.go)return;RK.go=1;clearTimeout(RK.timer);
     try{const hs={};hs[ME.username]=(HID(SAVE.last)||HEROES[0]).id;for(const g of NET.gs)if(g.nm)hs[g.nm]=g.h.id;
-      const m=await rpc('start_match',{p_difficulty:curDif(),p_map:SAVE.map,p_heroes:hs});RK.go=0;netGo(m.match)}
+      const m=await rpc('start_match',{p_difficulty:curDif(),p_map:SAVE.map,p_heroes:hs,p_party:true});RK.go=0;netGo(m.match)}
     catch(e){RK.go=0;draw();acMsg(acErr(e),true)}};
   RK.go=0;
   if(reuse){NET.allow=others;NET.max=p.size;NET.opts.onLobby=draw;draw();

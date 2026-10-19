@@ -49,7 +49,7 @@ console.log('Equipos');
 sql(`insert into friendships(requester,addressee,status) select a.id,b.id,'accepted' from profiles a, profiles b where a.username='Ana' and b.username='Carla'`);
 await A.evaluate(async()=>{await rpc('create_party',{p_mode:'duo'});await rpc('invite_to_party',{p_username:'Carla'})});
 await C.evaluate(async()=>{const i=await rpc('list_invites');await rpc('join_party',{p_code:i[0].code});await rpc('set_ready',{p_ready:true})});
-const m=await A.evaluate(()=>rpc('start_match',{p_difficulty:'n',p_map:'ruins',p_heroes:{Ana:'willie',Carla:'pooh'}}));
+const m=await A.evaluate(()=>rpc('start_match',{p_difficulty:'n',p_map:'ruins',p_heroes:{Ana:'willie',Carla:'pooh'},p_party:true}));
 sql(`update matches set started_at = now() - interval '11 minutes' where id='${m.match}'`);
 await A.evaluate(id=>rpc('submit_result',{p_match:id,p_survived:600,p_kills:300,p_won:true,p_level:20}),m.match);
 await C.evaluate(id=>rpc('submit_result',{p_match:id,p_survived:598,p_kills:290,p_won:true,p_level:20}),m.match);

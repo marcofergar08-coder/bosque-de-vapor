@@ -35,7 +35,13 @@ check('aguantar 18 min en segundos: el servidor lo rechaza',await wait(A,async()
 check('...y no da puntos',sql(`select count(*) from match_results`)==='1');
 console.log('Partida de grupo (dúo)');
 await A.evaluate(()=>menu());await A.click('#mfr');await wait(A,async()=>/Crea un grupo/.test(await txt(A)));await A.click('#som_duo');
-await wait(A,async()=>/Código del grupo/.test(await txt(A)));await A.click('#soinv');await wait(A,async()=>/Beto/.test(await txt(A)));await A.click('[data-act="inv|Beto"]');
+await wait(A,async()=>/Código del grupo/.test(await txt(A)));
+console.log('Partida en solitario estando en un grupo');
+await A.evaluate(()=>menu());await A.click('#mplay');check('cuenta como partida en solitario',await wait(A,async()=>await A.evaluate(()=>!!RK.mid)),await A.evaluate(()=>RK.info));
+sql(`update matches set started_at = now() - interval '3 minutes' where status='active' and mode='solo'`);
+await A.evaluate(()=>{S.t=120;S.kills=10;P.hp=0});
+check('y da puntos en solitario',await wait(A,async()=>/Partida clasificada: \+20 puntos/.test(await txt(A))),await txt(A));
+await A.evaluate(()=>menu());await A.click('#mfr');await wait(A,async()=>/Código del grupo/.test(await txt(A)));await A.click('#soinv');await wait(A,async()=>/Beto/.test(await txt(A)));await A.click('[data-act="inv|Beto"]');
 await B.evaluate(()=>menu());check('Beto recibe la invitación',await wait(B,async()=>!!(await B.$('#soia')),15000));await B.click('#soia');
 await wait(B,async()=>/Código del grupo/.test(await txt(B)));await B.click('#sordy');
 await A.click('#bk');check('el líder puede empezar cuando todos están listos',await wait(A,async()=>await A.evaluate(()=>{const b=$('sogo');return b&&!b.disabled}),8000),await txt(A));

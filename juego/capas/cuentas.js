@@ -4,7 +4,7 @@
  La clave "anon"/"publishable" es pública: está pensada para ir dentro del juego.
  Todo lo competitivo (puntos, victorias, nivel) lo decide el servidor, nunca este código. */
 const SB={url:'https://gtkuopfkubxxlkvidhlg.supabase.co',key:'sb_publishable_NcJqPX444kj-dJVIGi36Yg_njXTlfCa',redirect:'bosquedevapor://auth'};
-{const q=new URLSearchParams(location.search);if(q.get('sburl')){SB.url=q.get('sburl');SB.key=q.get('sbkey')||''}}
+{const q=new URLSearchParams(location.search);if(q.get('sburl')){const o=q.get('sburl')==='off';SB.url=o?'':q.get('sburl');SB.key=o?'':q.get('sbkey')||''}}
 let sb=null,ME=null,SESS=null;
 const AC={view:'',base:null,hash:'',busy:false,timer:0,err:'',pushT:0,state:'',beat:0};
 const sbOn=()=>!!(SB.url&&SB.key&&window.supabase);
